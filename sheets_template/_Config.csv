@@ -1,0 +1,6 @@
+key,value,description
+capacity,20,定員
+daily_rate,1.5,1日制約の倍率（150%）
+monthly_rate,1.25,月間制約の倍率（125%）
+monthly_off_days,8,月の利用上限算出用（月日数 - この値）
+submission_deadline_days_before,15,翌月分の希望提出締切（月初の◯日前）

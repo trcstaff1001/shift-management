@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>プロフィール / シフト管理</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="../../config.js"></script>
+  <script src="api.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <a class="back-link" href="home.html">ホーム</a>
+      <h1>プロフィール</h1>
+      <span style="width: 60px;"></span>
+    </header>
+
+    <main class="app-main">
+      <h2 class="page-title">登録情報</h2>
+      <p class="page-lead">変更したい項目があれば支援員までお伝えください</p>
+
+      <div class="card">
+        <dl style="margin: 0;" id="profileFields">
+          <div class="profile-row"><dt>お名前</dt><dd id="pf-name">読み込み中…</dd></div>
+          <div class="profile-row"><dt>利用者ID</dt><dd id="pf-id">—</dd></div>
+          <div class="profile-row"><dt>カテゴリ</dt><dd id="pf-cat">—</dd></div>
+          <div class="profile-row"><dt>メールアドレス</dt><dd id="pf-email">—</dd></div>
+          <div class="profile-row"><dt>今月の利用上限</dt><dd id="pf-limit">—</dd></div>
+        </dl>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">パスワード</h3>
+        <p class="card-meta mb-3" style="margin-bottom: 16px;">最終変更: 2026年3月10日</p>
+        <a class="btn btn-secondary" href="#">パスワードを変更する</a>
+      </div>
+
+      <div class="btn-stack mt-4" style="margin-top: 24px;">
+        <button class="btn btn-danger" type="button" id="logoutBtn" style="width: 100%;">ログアウト</button>
+      </div>
+    </main>
+
+    <nav class="app-footer-nav">
+      <a href="home.html">ホーム</a>
+      <a href="request.html">希望</a>
+      <a href="calendar.html">シフト</a>
+      <a href="notifications.html">通知</a>
+    </nav>
+  </div>
+
+  <script>
+    ShiftAPI.requireSession();
+    const session = ShiftAPI.getSession();
+
+    function setProfile(u) {
+      const displayCategory = u.category === '在宅(関東)' ? '在宅' : u.category;
+      document.getElementById('pf-name').textContent = u.name || '—';
+      document.getElementById('pf-id').textContent = '#' + u.user_id;
+      document.getElementById('pf-cat').textContent = displayCategory || '—';
+      document.getElementById('pf-email').textContent = u.email || '—';
+      const today = new Date();
+      const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+      document.getElementById('pf-limit').textContent = (daysInMonth - 8) + '日';
+    }
+
+    // 初期表示はセッション情報、その後 API で詳細取得
+    setProfile(session);
+    (async function loadProfile() {
+      try {
+        const me = await ShiftAPI.getMe();
+        setProfile(me);
+      } catch (err) {
+        console.error(err);
+      }
+    })();
+
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+      if (confirm('ログアウトしますか？')) ShiftAPI.logout();
+    });
+  </script>
+</body>
+</html>

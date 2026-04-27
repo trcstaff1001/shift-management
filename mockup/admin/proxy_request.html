@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>代理入力 / シフト管理（管理）</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .proxy-cal {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 6px;
+      max-width: 640px;
+    }
+    .proxy-cal .dow {
+      text-align: center;
+      padding: 8px 0;
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+    .proxy-cal .dow.sun { color: var(--danger); }
+    .proxy-cal .dow.sat { color: var(--primary); }
+    .proxy-cell {
+      aspect-ratio: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--card-bg);
+      cursor: pointer;
+      font-weight: 500;
+      user-select: none;
+      transition: background 0.15s, border-color 0.15s;
+      position: relative;
+    }
+    .proxy-cell.empty { background: transparent; border: none; cursor: default; }
+    .proxy-cell.closed {
+      background: var(--disabled-bg);
+      color: var(--disabled-text);
+      cursor: not-allowed;
+    }
+    .proxy-cell.selected {
+      background: var(--primary-bg);
+      border-color: var(--primary);
+      color: var(--primary-dark);
+      font-weight: 700;
+    }
+    .proxy-cell.selected::after {
+      content: "✓";
+      position: absolute;
+      top: 2px;
+      right: 4px;
+      font-size: 12px;
+      color: var(--primary);
+    }
+    .proxy-cell:hover:not(.empty):not(.closed) { border-color: var(--primary-light); }
+    .proxy-cell .label {
+      font-size: 10px;
+      margin-top: 2px;
+      color: var(--text-soft);
+    }
+    .proxy-cell.closed .label { color: var(--disabled-text); }
+    .proxy-cell.selected .label { color: var(--primary); }
+    .proxy-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--sp-3) var(--sp-4);
+      background: var(--primary-bg);
+      border-radius: var(--radius);
+      margin-top: var(--sp-4);
+    }
+    .proxy-summary .label { font-size: var(--fs-sm); color: var(--text-muted); }
+    .proxy-summary .value { font-size: var(--fs-md); font-weight: 700; color: var(--primary-dark); }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <h1>シフト管理</h1>
+        <p>管理画面</p>
+      </div>
+      <nav>
+        <ul class="sidebar-nav">
+          <li class="group-label">運用</li>
+          <li><a href="dashboard.html">ダッシュボード</a></li>
+          <li><a href="adjust.html">シフト調整</a></li>
+          <li><a href="attendance.html">出欠管理</a></li>
+          <li class="group-label">マスタ</li>
+          <li><a href="users.html" class="active">利用者管理</a></li>
+          <li><a href="business_days.html">営業日カレンダー</a></li>
+          <li class="group-label">その他</li>
+          <li><a href="notifications.html">通知配信履歴</a></li>
+          <li><a href="login.html">ログアウト</a></li>
+        </ul>
+      </nav>
+      <div class="sidebar-foot">ver 0.2 (mock)</div>
+    </aside>
+
+    <div class="main">
+      <header class="main-header">
+        <h1>代理入力</h1>
+        <div class="header-actions">
+          <a href="users.html" class="btn btn-secondary">← 利用者管理に戻る</a>
+        </div>
+      </header>
+
+      <div class="main-content">
+        <!-- 代理入力中バナー -->
+        <div class="proxy-banner">
+          <div class="proxy-banner-info">
+            <strong id="proxyName">利用者を選択してください</strong>
+            <span class="meta" id="proxyMeta"></span>
+          </div>
+          <div>
+            <select class="form-select" id="userSelect" style="min-width: 220px;">
+              <option value="">— 利用者を選択 —</option>
+            </select>
+          </div>
+        </div>
+
+        <p class="page-lead" id="leadText">
+          IT支援が必要な利用者の代わりに、支援員が翌月のシフト希望を代入力します。
+          通常は利用者本人のログインで提出してもらいますが、本機能を使うと支援員が利用者を選択して代入力できます。
+        </p>
+
+        <!-- 月切替 -->
+        <div class="card" id="targetCard" style="display: none;">
+          <h2 class="card-title">
+            <span id="targetMonthLabel">対象月</span>
+            <div class="month-nav" id="monthNav">
+              <button class="month-nav-btn" data-dir="-1">←</button>
+              <span class="month-nav-current" id="monthCurrent">—</span>
+              <button class="month-nav-btn" data-dir="+1">→</button>
+            </div>
+          </h2>
+          <p class="text-sm text-muted mb-4" id="limitInfo">—</p>
+
+          <div class="proxy-cal" id="proxyCal"></div>
+
+          <div class="proxy-summary">
+            <span class="label">選択中の希望日数</span>
+            <span class="value"><span id="selectedCount">0</span> / <span id="limitCount">—</span> 日</span>
+          </div>
+
+          <div class="modal-actions" style="margin-top: var(--sp-4);">
+            <button class="btn btn-success" id="submitBtn" disabled>この内容で利用者として提出</button>
+            <button class="btn btn-secondary" onclick="if(confirm('入力内容を破棄します。よろしいですか？')) location.reload();">クリア</button>
+          </div>
+
+          <p class="text-xs text-muted mt-3">
+            ※ 提出時、ShiftRequests に <code>user_id={{選択した利用者ID}}</code> として記録されます。
+            将来的に「代理入力した支援員ID」を <code>acting_admin_id</code> として保存する想定です。
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ------- ダミー利用者 -------
+    const users = [
+      { id: 10001, name: '田中 太郎', cat: '通所' },
+      { id: 10002, name: '佐藤 次郎', cat: '通所' },
+      { id: 10003, name: '鈴木 三郎', cat: '在宅' },
+      { id: 10004, name: '高橋 花子', cat: '通所' },
+      { id: 10005, name: '伊藤 美咲', cat: '在宅(関東)' },
+      { id: 10006, name: '渡辺 健太', cat: '通所' },
+      { id: 10007, name: '山本 直樹', cat: '在宅通所' },
+      { id: 10008, name: '中村 さくら', cat: '通所' },
+      { id: 10009, name: '小林 海斗', cat: '通所' },
+      { id: 10010, name: '加藤 結衣', cat: '在宅' },
+    ];
+
+    // ------- セレクト初期化 -------
+    const userSelect = document.getElementById('userSelect');
+    users.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u.id;
+      // 「在宅(関東)」は管理者UIなので正式名で表示
+      opt.textContent = `#${u.id} ${u.name}（${u.cat}）`;
+      userSelect.appendChild(opt);
+    });
+
+    // URLパラメータから初期ユーザー（users.htmlの代理入力ボタンから ?uid=xxxxx で来る想定）
+    const params = new URLSearchParams(location.search);
+    const initialUid = params.get('uid');
+    if (initialUid) userSelect.value = initialUid;
+
+    // ------- 状態 -------
+    let currentUser = null;
+    let target = getMonthFromHash();
+    const selected = new Set();
+
+    function getMonthFromHash() {
+      const m = location.hash.match(/month=(\d{4})-(\d{2})/);
+      if (m) return { y: +m[1], m: +m[2] };
+      // デフォルト: 翌月（=2026-05、現在を 2026-04 想定）
+      return { y: 2026, m: 5 };
+    }
+
+    function setMonthHash(y, m) {
+      location.hash = `month=${y}-${String(m).padStart(2, '0')}`;
+    }
+
+    // ------- カレンダー描画 -------
+    function render() {
+      if (!currentUser) {
+        document.getElementById('targetCard').style.display = 'none';
+        return;
+      }
+      document.getElementById('targetCard').style.display = '';
+
+      const y = target.y, m = target.m;
+      const days = new Date(y, m, 0).getDate();
+      const firstDow = new Date(y, m - 1, 1).getDay();
+      const limit = days - 8;
+      document.getElementById('limitCount').textContent = limit;
+      document.getElementById('targetMonthLabel').textContent = `${y}年${m}月の希望提出`;
+      document.getElementById('monthCurrent').textContent = `${y}年${m}月`;
+      document.getElementById('limitInfo').innerHTML =
+        `月の利用上限: <strong>${limit}日</strong>（${days}日 - 8日の規定）。日付をクリックで希望をオン/オフ。`;
+
+      // 閉所日: 日曜 + ダミー祝日（5月: 3,4,5,6 / その他はランダムなし）
+      const closed = new Set();
+      for (let d = 1; d <= days; d++) {
+        if (new Date(y, m - 1, d).getDay() === 0) closed.add(d);
+      }
+      if (y === 2026 && m === 5) [3, 4, 5, 6].forEach(d => closed.add(d));
+
+      const cal = document.getElementById('proxyCal');
+      cal.innerHTML = '';
+      ['日', '月', '火', '水', '木', '金', '土'].forEach((d, i) => {
+        const el = document.createElement('div');
+        el.className = 'dow' + (i === 0 ? ' sun' : i === 6 ? ' sat' : '');
+        el.textContent = d;
+        cal.appendChild(el);
+      });
+      for (let i = 0; i < firstDow; i++) {
+        const e = document.createElement('div');
+        e.className = 'proxy-cell empty';
+        cal.appendChild(e);
+      }
+      for (let d = 1; d <= days; d++) {
+        const cell = document.createElement('div');
+        cell.className = 'proxy-cell';
+        cell.dataset.day = d;
+        const isClosed = closed.has(d);
+        if (isClosed) cell.classList.add('closed');
+        if (selected.has(d)) cell.classList.add('selected');
+        cell.innerHTML = `${d}<span class="label">${isClosed ? '閉所' : (selected.has(d) ? '希望' : '—')}</span>`;
+        if (!isClosed) {
+          cell.addEventListener('click', () => {
+            if (selected.has(d)) selected.delete(d);
+            else {
+              if (selected.size >= limit) {
+                alert(`月の利用上限 ${limit}日 を超えています。\n他の日を解除してから選択してください。`);
+                return;
+              }
+              selected.add(d);
+            }
+            render();
+          });
+        }
+        cal.appendChild(cell);
+      }
+
+      const count = selected.size;
+      document.getElementById('selectedCount').textContent = count;
+      document.getElementById('submitBtn').disabled = count === 0;
+    }
+
+    // ------- ユーザー切替 -------
+    function selectUser(uid) {
+      currentUser = users.find(u => u.id === Number(uid)) || null;
+      selected.clear();
+      if (currentUser) {
+        document.getElementById('proxyName').textContent = `代理入力中: ${currentUser.name} さん`;
+        document.getElementById('proxyMeta').textContent = `#${currentUser.id} / ${currentUser.cat}`;
+      } else {
+        document.getElementById('proxyName').textContent = '利用者を選択してください';
+        document.getElementById('proxyMeta').textContent = '';
+      }
+      render();
+    }
+
+    userSelect.addEventListener('change', () => selectUser(userSelect.value));
+
+    // ------- 月切替 -------
+    document.querySelectorAll('#monthNav .month-nav-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const dir = +btn.dataset.dir;
+        let y = target.y, m = target.m + dir;
+        if (m < 1) { m = 12; y--; }
+        else if (m > 12) { m = 1; y++; }
+        setMonthHash(y, m);
+      });
+    });
+
+    window.addEventListener('hashchange', () => {
+      target = getMonthFromHash();
+      selected.clear();
+      render();
+    });
+
+    // ------- 提出 -------
+    document.getElementById('submitBtn').addEventListener('click', () => {
+      if (!currentUser || selected.size === 0) return;
+      const dates = [...selected].sort((a, b) => a - b)
+        .map(d => `${target.y}-${String(target.m).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+      const ok = confirm(
+        `${currentUser.name} さんとして以下を提出します。\n\n` +
+        `対象月: ${target.y}年${target.m}月\n` +
+        `日数: ${dates.length}日\n` +
+        `日付: ${dates.join(', ')}\n\n` +
+        `よろしいですか？`
+      );
+      if (ok) {
+        alert(`提出しました（モック）\n\nAPI想定:\nPOST shiftRequests.create\npayload: { user_id: ${currentUser.id}, dates: [${dates.length}件], acting_admin_id: <現ログイン管理者ID> }`);
+        selected.clear();
+        render();
+      }
+    });
+
+    // ------- 初期化 -------
+    if (initialUid) selectUser(initialUid);
+    else render();
+  </script>
+</body>
+</html>

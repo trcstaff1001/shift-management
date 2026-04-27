@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>利用者管理 / シフト管理（管理）</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="../../config.js"></script>
+  <script src="api.js"></script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <h1>シフト管理</h1>
+        <p>管理画面</p>
+      </div>
+      <nav>
+        <ul class="sidebar-nav">
+          <li class="group-label">運用</li>
+          <li><a href="dashboard.html">ダッシュボード</a></li>
+          <li><a href="adjust.html">シフト調整</a></li>
+          <li><a href="attendance.html">出欠管理</a></li>
+          <li class="group-label">マスタ</li>
+          <li><a href="users.html" class="active">利用者管理</a></li>
+          <li><a href="business_days.html">営業日カレンダー</a></li>
+          <li class="group-label">その他</li>
+          <li><a href="notifications.html">通知配信履歴</a></li>
+          <li><a href="login.html">ログアウト</a></li>
+        </ul>
+      </nav>
+      <div class="sidebar-foot">ver 0.2 (mock)</div>
+    </aside>
+
+    <div class="main">
+      <header class="main-header">
+        <h1>利用者管理</h1>
+        <div class="header-actions">
+          <button class="btn" onclick="document.getElementById('inviteModal').classList.add('is-open')">+ 新規招待</button>
+        </div>
+      </header>
+
+      <div class="main-content">
+        <p class="page-lead">利用者の登録・カテゴリ変更・利用停止を行います。メールアドレスがない方には `xxxx@local` 形式のダミーIDを発行できます。</p>
+
+        <div class="stat-grid">
+          <div class="stat success">
+            <p class="stat-label">利用中</p>
+            <p class="stat-value">38<span class="unit">名</span></p>
+          </div>
+          <div class="stat">
+            <p class="stat-label">通所</p>
+            <p class="stat-value">22<span class="unit">名</span></p>
+          </div>
+          <div class="stat">
+            <p class="stat-label">在宅</p>
+            <p class="stat-value">12<span class="unit">名</span></p>
+          </div>
+          <div class="stat warn">
+            <p class="stat-label">5月希望未提出</p>
+            <p class="stat-value">2<span class="unit">名</span></p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="search-bar">
+            <input type="text" class="form-input" placeholder="名前・ID・メールで検索">
+            <select class="form-select" style="max-width: 160px;">
+              <option>すべてのカテゴリ</option>
+              <option>通所</option>
+              <option>在宅</option>
+              <option>在宅(関東)</option>
+              <option>在宅通所</option>
+            </select>
+            <select class="form-select" style="max-width: 140px;">
+              <option>利用中</option>
+              <option>停止</option>
+              <option>退所</option>
+              <option>すべて</option>
+            </select>
+          </div>
+
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>名前</th>
+                  <th>カテゴリ</th>
+                  <th>メール</th>
+                  <th>状態</th>
+                  <th>5月希望</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="userTable"></tbody>
+            </table>
+          </div>
+          <p class="text-xs text-muted mt-3" id="rowSummary"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 招待モーダル -->
+  <div class="modal-overlay" id="inviteModal">
+    <div class="modal">
+      <h2>新規利用者を招待</h2>
+      <p>メールアドレスを入力すると招待メールが送信されます。メールがない方は「ダミーID発行」をご利用ください。</p>
+      <div class="form-group">
+        <label>名前</label>
+        <input type="text" class="form-input" placeholder="例: 田中 太郎">
+      </div>
+      <div class="form-group">
+        <label>メールアドレス</label>
+        <input type="email" class="form-input" placeholder="例: tanaka@example.com">
+      </div>
+      <div class="form-group">
+        <label>カテゴリ</label>
+        <select class="form-select">
+          <option>通所</option>
+          <option>在宅</option>
+          <option>在宅(関東)</option>
+          <option>在宅通所</option>
+        </select>
+      </div>
+      <div style="display: flex; gap: 12px;">
+        <button class="btn" style="flex: 1;" onclick="alert('招待メール送信しました（モック）'); document.getElementById('inviteModal').classList.remove('is-open');">招待を送信</button>
+        <button class="btn btn-secondary" style="flex: 1;" onclick="alert('ダミーID発行: tanaka_a3f@local（モック）'); document.getElementById('inviteModal').classList.remove('is-open');">ダミーID発行</button>
+      </div>
+      <button class="btn btn-secondary mt-3" style="width: 100%;" onclick="document.getElementById('inviteModal').classList.remove('is-open')">キャンセル</button>
+    </div>
+  </div>
+
+  <script>
+    // ----- データ取得（API or モック） -----
+    // ShiftRequests から「5月希望」の提出状況を集計し、各ユーザーに付加する。
+    async function loadUsers() {
+      const [users, shiftRequests] = await Promise.all([
+        ShiftAdminAPI.listUsers(),                                // status 指定なし = 全件
+        ShiftAdminAPI.listShiftRequests({ month: '2026-05' }).catch(() => []),
+      ]);
+
+      // 5月希望提出済みのユーザーIDセット
+      const submittedIds = new Set(shiftRequests.map(r => Number(r.user_id)));
+
+      return users.map(u => ({
+        id: Number(u.user_id),
+        name: u.name,
+        cat: u.category,
+        email: u.email,
+        status: u.status,
+        mayReq: u.status !== '利用中' ? '—'
+              : submittedIds.has(Number(u.user_id)) ? '提出済'
+              : '未提出',
+      }));
+    }
+
+    // ----- 描画 -----
+    const tbody = document.getElementById('userTable');
+    function renderTable(users) {
+      tbody.innerHTML = users.map(u => {
+        const statusPill = u.status === '利用中' ? '<span class="pill success">利用中</span>'
+          : u.status === '停止' ? '<span class="pill muted">停止</span>'
+          : '<span class="pill muted">退所</span>';
+        const reqPill = u.mayReq === '提出済' ? '<span class="pill success">提出済</span>'
+          : u.mayReq === '未提出' ? '<span class="pill warn">未提出</span>'
+          : '<span class="text-muted text-xs">—</span>';
+        const proxyDisabled = u.status !== '利用中';
+        return `<tr>
+          <td>#${u.id}</td>
+          <td><strong>${u.name}</strong></td>
+          <td>${u.cat}</td>
+          <td class="text-sm">${u.email}</td>
+          <td>${statusPill}</td>
+          <td>${reqPill}</td>
+          <td>
+            <a href="#" class="btn btn-secondary btn-sm">編集</a>
+            ${proxyDisabled
+              ? '<button class="btn btn-secondary btn-sm" disabled title="停止/退所中は代理入力不可">代理入力</button>'
+              : `<a href="proxy_request.html?uid=${u.id}" class="btn btn-secondary btn-sm">代理入力</a>`}
+          </td>
+        </tr>`;
+      }).join('');
+      document.getElementById('rowSummary').textContent = `${users.length} 名を表示中`;
+    }
+
+    // ----- 招待モーダル -----
+    function bindInviteModal() {
+      // モーダル overlay クリックで閉じる
+      document.getElementById('inviteModal').addEventListener('click', (e) => {
+        if (e.target.id === 'inviteModal') e.target.classList.remove('is-open');
+      });
+      // 招待・ダミーID 発行ボタンの onclick は HTML 側で alert を出している暫定実装。
+      // 実APIへの差し替えは admin v0.3 で行う前提（users.invite を呼び、戻り値で行を追加）。
+    }
+
+    // ----- 起動 -----
+    (async function init() {
+      bindInviteModal();
+      try {
+        const users = await loadUsers();
+        renderTable(users);
+      } catch (err) {
+        console.error(err);
+        tbody.innerHTML = `<tr><td colspan="7" class="text-muted">読み込みに失敗しました: ${err.message}</td></tr>`;
+      }
+    })();
+  </script>
+</body>
+</html>

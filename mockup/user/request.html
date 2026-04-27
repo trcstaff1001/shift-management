@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>シフト希望を出す / シフト管理</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="../../config.js"></script>
+  <script src="api.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <a class="back-link" href="home.html">ホーム</a>
+      <h1>シフト希望</h1>
+      <span style="width: 60px;"></span>
+    </header>
+
+    <main class="app-main">
+      <h2 class="page-title">5月のシフト希望</h2>
+      <p class="page-lead">通所したい日をタップしてください</p>
+
+      <div class="counter-bar" id="counterBar">
+        <span class="counter-label">選択中</span>
+        <span class="counter-value"><span id="selectedCount">0</span> / <span id="limitDays">23</span> 日</span>
+      </div>
+
+      <div class="card" style="background: var(--warning-bg); border-color: var(--warning); padding: 12px 16px;">
+        <p class="card-meta" style="color: var(--warning); font-weight: 600; margin: 0;">
+          提出締切: 2026年4月15日（あと <strong>3日</strong>）
+        </p>
+      </div>
+
+      <div class="calendar-nav">
+        <button type="button" disabled aria-label="前月">‹</button>
+        <span class="month">2026年 5月</span>
+        <button type="button" disabled aria-label="次月">›</button>
+      </div>
+
+      <div class="calendar" id="calendar">
+        <div class="dow sun">日</div>
+        <div class="dow">月</div>
+        <div class="dow">火</div>
+        <div class="dow">水</div>
+        <div class="dow">木</div>
+        <div class="dow">金</div>
+        <div class="dow sat">土</div>
+      </div>
+
+      <div class="legend">
+        <span class="legend-item"><span class="legend-swatch swatch-selected"></span>選択中</span>
+        <span class="legend-item"><span class="legend-swatch swatch-closed"></span>閉所日</span>
+      </div>
+
+      <div class="btn-stack mt-4" style="margin-top: 24px;">
+        <button class="btn" id="submitBtn" type="button" disabled>提出する</button>
+        <a class="btn btn-secondary" href="home.html">あとで決める</a>
+      </div>
+    </main>
+  </div>
+
+  <div class="modal-overlay" id="confirmModal">
+    <div class="modal">
+      <h2>提出してもよろしいですか？</h2>
+      <p>
+        5月の希望: <strong id="modalCount">0</strong> 日<br>
+        提出後も締切までは修正できます
+      </p>
+      <div class="btn-stack">
+        <button class="btn" id="modalSubmit" type="button">はい、提出する</button>
+        <button class="btn btn-secondary" id="modalCancel" type="button">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="doneModal">
+    <div class="modal">
+      <h2>提出しました</h2>
+      <p>5月のシフト希望を受け付けました。確定したらお知らせします。</p>
+      <a class="btn" href="home.html">ホームへ戻る</a>
+    </div>
+  </div>
+
+  <script>
+    const YEAR = 2026;
+    const MONTH = 5;
+    const DAYS_IN_MONTH = 31;
+    const FIRST_DOW = new Date(YEAR, MONTH - 1, 1).getDay();
+    const LIMIT = 23;
+
+    const closedDates = new Set();
+    for (let d = 1; d <= DAYS_IN_MONTH; d++) {
+      if (new Date(YEAR, MONTH - 1, d).getDay() === 0) closedDates.add(d);
+    }
+    [3, 4, 5, 6].forEach(d => closedDates.add(d));
+
+    const cal = document.getElementById('calendar');
+    for (let i = 0; i < FIRST_DOW; i++) {
+      const empty = document.createElement('div');
+      empty.className = 'cell empty';
+      cal.appendChild(empty);
+    }
+    const selected = new Set();
+    for (let d = 1; d <= DAYS_IN_MONTH; d++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.textContent = d;
+      cell.dataset.day = d;
+      if (closedDates.has(d)) {
+        cell.classList.add('closed');
+      } else {
+        cell.addEventListener('click', () => toggleCell(d, cell));
+      }
+      cal.appendChild(cell);
+    }
+
+    function toggleCell(day, cell) {
+      if (selected.has(day)) {
+        selected.delete(day);
+        cell.classList.remove('selected');
+      } else {
+        if (selected.size >= LIMIT) {
+          alert(`5月は最大 ${LIMIT} 日までしか選択できません`);
+          return;
+        }
+        selected.add(day);
+        cell.classList.add('selected');
+      }
+      updateCounter();
+    }
+
+    function updateCounter() {
+      document.getElementById('selectedCount').textContent = selected.size;
+      const bar = document.getElementById('counterBar');
+      bar.classList.toggle('warn', selected.size >= LIMIT - 3 && selected.size < LIMIT);
+      bar.classList.toggle('over', selected.size >= LIMIT);
+      document.getElementById('submitBtn').disabled = selected.size === 0;
+    }
+
+    document.getElementById('submitBtn').addEventListener('click', () => {
+      document.getElementById('modalCount').textContent = selected.size;
+      document.getElementById('confirmModal').classList.add('is-open');
+    });
+    document.getElementById('modalCancel').addEventListener('click', () => {
+      document.getElementById('confirmModal').classList.remove('is-open');
+    });
+    document.getElementById('modalSubmit').addEventListener('click', async () => {
+      const submitBtn = document.getElementById('modalSubmit');
+      const restore = ShiftAPI.busyButton(submitBtn, '送信中…');
+      try {
+        // 翌月分（5月）の希望を YYYY-MM-DD で送る
+        const dates = Array.from(selected).sort((a, b) => a - b).map(d => {
+          const dd = String(d).padStart(2, '0');
+          return YEAR + '-' + String(MONTH).padStart(2, '0') + '-' + dd;
+        });
+        await ShiftAPI.submitShiftRequests(dates);
+        document.getElementById('confirmModal').classList.remove('is-open');
+        document.getElementById('doneModal').classList.add('is-open');
+      } catch (err) {
+        alert('提出に失敗しました: ' + (err.message || 'エラー'));
+        restore();
+      }
+    });
+
+    // セッションチェック
+    ShiftAPI.requireSession();
+  </script>
+</body>
+</html>

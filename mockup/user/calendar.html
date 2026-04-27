@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>確定シフト / シフト管理</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="../../config.js"></script>
+  <script src="api.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <a class="back-link" href="home.html">ホーム</a>
+      <h1>確定シフト</h1>
+      <span style="width: 60px;"></span>
+    </header>
+
+    <main class="app-main">
+      <h2 class="page-title">5月のシフト</h2>
+      <p class="page-lead">確定した通所日です</p>
+
+      <div class="calendar-nav">
+        <button type="button" aria-label="前月">‹</button>
+        <span class="month">2026年 5月</span>
+        <button type="button" aria-label="次月">›</button>
+      </div>
+
+      <div class="calendar" id="calendar">
+        <div class="dow sun">日</div>
+        <div class="dow">月</div>
+        <div class="dow">火</div>
+        <div class="dow">水</div>
+        <div class="dow">木</div>
+        <div class="dow">金</div>
+        <div class="dow sat">土</div>
+      </div>
+
+      <div class="legend">
+        <span class="legend-item"><span class="legend-swatch swatch-confirmed"></span>通所</span>
+        <span class="legend-item"><span class="legend-swatch swatch-requested"></span>希望（未確定）</span>
+        <span class="legend-item"><span class="legend-swatch swatch-closed"></span>閉所日</span>
+      </div>
+
+      <div class="card mt-4" style="margin-top: 24px;">
+        <h3 class="card-title">今月の通所予定</h3>
+        <p class="card-meta" id="summary">
+          確定: <strong style="color: var(--success);">—日</strong> ／
+          希望（未確定）: <strong>—日</strong>
+        </p>
+        <p class="card-meta" style="margin-top: 8px;">
+          ※ 確定後の変更は支援員までご相談ください
+        </p>
+      </div>
+    </main>
+
+    <nav class="app-footer-nav">
+      <a href="home.html">ホーム</a>
+      <a href="request.html">希望</a>
+      <a href="calendar.html" class="active">シフト</a>
+      <a href="notifications.html">通知</a>
+    </nav>
+  </div>
+
+  <script>
+    const YEAR = 2026;
+    const MONTH = 5;
+    const DAYS_IN_MONTH = 31;
+    const FIRST_DOW = new Date(YEAR, MONTH - 1, 1).getDay();
+    const TODAY = 12;
+
+    const closedDates = new Set();
+    for (let d = 1; d <= DAYS_IN_MONTH; d++) {
+      if (new Date(YEAR, MONTH - 1, d).getDay() === 0) closedDates.add(d);
+    }
+    [3, 4, 5, 6].forEach(d => closedDates.add(d));
+
+    // 初期描画は空のカレンダー（API取得後に色を付ける）
+    let confirmedDates = new Set();
+    const externalDates = new Set();   // shiftConfirmed.list 未実装のため一旦空
+    let requestedDates = new Set();
+    let rejectedDates = new Set();
+
+    const cal = document.getElementById('calendar');
+    function render() {
+      // ヘッダーを残してクリア
+      Array.from(cal.querySelectorAll('.cell')).forEach(n => n.remove());
+      for (let i = 0; i < FIRST_DOW; i++) {
+        const empty = document.createElement('div');
+        empty.className = 'cell empty';
+        cal.appendChild(empty);
+      }
+      for (let d = 1; d <= DAYS_IN_MONTH; d++) {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.textContent = d;
+        if (closedDates.has(d)) {
+          cell.classList.add('closed');
+        } else if (confirmedDates.has(d)) {
+          cell.classList.add('confirmed');
+          if (externalDates.has(d)) cell.classList.add('external');
+        } else if (requestedDates.has(d)) {
+          cell.classList.add('requested');
+        } else if (rejectedDates.has(d)) {
+          cell.classList.add('rejected');
+        }
+        if (d === TODAY) cell.classList.add('today');
+        cal.appendChild(cell);
+      }
+    }
+    render();
+
+    // ----- API から取得 -----
+    // shiftConfirmed.list は未実装のため、ShiftRequests を status で振り分けて暫定表示。
+    //   status='承認'  → 確定（緑）
+    //   status='提出済' → 希望（青）
+    //   status='不承認' → 取り消し線
+    ShiftAPI.requireSession();
+    (async function loadShifts() {
+      try {
+        const month = YEAR + '-' + String(MONTH).padStart(2, '0');
+        const rows = await ShiftAPI.listMyShiftRequests(month);
+        const c = new Set(), r = new Set(), j = new Set();
+        rows.forEach(row => {
+          const day = Number(String(row.date).split('-')[2]);
+          if (!day) return;
+          if (row.status === '承認') c.add(day);
+          else if (row.status === '提出済') r.add(day);
+          else if (row.status === '不承認') j.add(day);
+        });
+        confirmedDates = c;
+        requestedDates = r;
+        rejectedDates = j;
+        render();
+        updateSummary();
+      } catch (err) {
+        if (err.message !== 'NO_SESSION') {
+          console.error(err);
+          // モック時は固定データを使う
+          if (ShiftAPI.isMockMode()) {
+            confirmedDates = new Set([1, 2, 7, 8, 9, 12, 13, 14, 15, 19, 20, 21]);
+            externalDates.add(15);
+            requestedDates = new Set([22, 26, 27, 28]);
+            render();
+            updateSummary();
+          }
+        }
+      }
+    })();
+
+    function updateSummary() {
+      const sum = document.getElementById('summary');
+      if (sum) sum.innerHTML =
+        '確定: <strong style="color: var(--success);">' + confirmedDates.size + '日</strong> ／ ' +
+        '希望（未確定）: <strong>' + requestedDates.size + '日</strong>';
+    }
+  </script>
+</body>
+</html>

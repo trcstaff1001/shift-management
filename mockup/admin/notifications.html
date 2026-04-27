@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>通知配信履歴 / シフト管理（管理）</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <h1>シフト管理</h1>
+        <p>管理画面</p>
+      </div>
+      <nav>
+        <ul class="sidebar-nav">
+          <li class="group-label">運用</li>
+          <li><a href="dashboard.html">ダッシュボード</a></li>
+          <li><a href="adjust.html">シフト調整</a></li>
+          <li><a href="attendance.html">出欠管理</a></li>
+          <li class="group-label">マスタ</li>
+          <li><a href="users.html">利用者管理</a></li>
+          <li><a href="business_days.html">営業日カレンダー</a></li>
+          <li class="group-label">その他</li>
+          <li><a href="notifications.html" class="active">通知配信履歴</a></li>
+          <li><a href="login.html">ログアウト</a></li>
+        </ul>
+      </nav>
+      <div class="sidebar-foot">ver 0.2 (mock)</div>
+    </aside>
+
+    <div class="main">
+      <header class="main-header">
+        <h1>通知配信履歴</h1>
+        <div class="header-actions">
+          <span class="text-sm text-muted">最終同期: 2026/4/27 10:32</span>
+        </div>
+      </header>
+
+      <div class="main-content">
+        <p class="page-lead">
+          システムから利用者・管理者へ送信された通知（メール）の配信履歴です。
+          メール送信失敗時は再送信できます。
+        </p>
+
+        <!-- 集計 -->
+        <div class="stat-grid">
+          <div class="stat success">
+            <p class="stat-label">送信成功（直近7日）</p>
+            <p class="stat-value">42<span class="unit">件</span></p>
+          </div>
+          <div class="stat danger">
+            <p class="stat-label">送信失敗</p>
+            <p class="stat-value">2<span class="unit">件</span></p>
+            <p class="stat-meta">要再送信</p>
+          </div>
+          <div class="stat">
+            <p class="stat-label">送信スキップ（@local）</p>
+            <p class="stat-value">5<span class="unit">件</span></p>
+            <p class="stat-meta">支援員が口頭伝達</p>
+          </div>
+          <div class="stat">
+            <p class="stat-label">本日の送信枠残</p>
+            <p class="stat-value">53<span class="unit">/ 100</span></p>
+            <p class="stat-meta">GAS MailApp 上限</p>
+          </div>
+        </div>
+
+        <!-- 検索 -->
+        <div class="card">
+          <div class="filter-bar">
+            <div class="form-group">
+              <label>期間（開始）</label>
+              <input type="date" class="form-input" id="filterFrom" value="2026-04-20">
+            </div>
+            <div class="form-group">
+              <label>期間（終了）</label>
+              <input type="date" class="form-input" id="filterTo" value="2026-04-27">
+            </div>
+            <div class="form-group">
+              <label>種別</label>
+              <select class="form-select" id="filterType">
+                <option value="">すべて</option>
+                <option value="シフト確定通知">シフト確定通知</option>
+                <option value="空き枠通知">空き枠通知</option>
+                <option value="その他">その他</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>利用者</label>
+              <input type="text" class="form-input" id="filterUser" placeholder="名前 or ID">
+            </div>
+            <div class="form-group">
+              <label>送信状態</label>
+              <select class="form-select" id="filterStatus">
+                <option value="">すべて</option>
+                <option value="success">成功</option>
+                <option value="failed">失敗</option>
+                <option value="skipped">スキップ</option>
+              </select>
+            </div>
+            <button class="btn btn-secondary" onclick="render()">絞り込み</button>
+            <button class="btn btn-secondary" onclick="resetFilters()">クリア</button>
+          </div>
+
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>送信日時</th>
+                  <th>宛先</th>
+                  <th>種別</th>
+                  <th>本文（抜粋）</th>
+                  <th>状態</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="notifTable"></tbody>
+            </table>
+          </div>
+          <p class="text-xs text-muted mt-3" id="rowSummary"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ダミーデータ — Notifications タブ + メール送信結果（mail_sent_at の有無 / failed フラグ）
+    const notifications = [
+      { id: 142, ts: '2026-04-27 10:30:12', uid: 10001, name: '田中 太郎', type: 'シフト確定通知',
+        msg: '5月のシフトが確定しました（15日）', status: 'success', email: 'tanaka@example.com' },
+      { id: 141, ts: '2026-04-27 10:30:08', uid: 10002, name: '佐藤 次郎', type: 'シフト確定通知',
+        msg: '5月のシフトが確定しました（17日）', status: 'success', email: 'sato@example.com' },
+      { id: 140, ts: '2026-04-27 10:30:05', uid: 10006, name: '渡辺 健太', type: 'シフト確定通知',
+        msg: '5月のシフトが確定しました（18日）— @localのため口頭伝達依頼', status: 'skipped', email: 'watanabe_e7@local' },
+      { id: 139, ts: '2026-04-26 17:00:01', uid: 99, name: '管理者 山田', type: 'その他',
+        msg: '出欠未記録 3名: 渡辺 健太, 小林 海斗, 加藤 結衣', status: 'success', email: 'yamada-admin@example.com' },
+      { id: 138, ts: '2026-04-26 09:15:42', uid: 10003, name: '鈴木 三郎', type: '空き枠通知',
+        msg: '4/27 に空きが出ました（先着順）', status: 'failed', email: 'suzuki@example.com', error: 'Mailbox full' },
+      { id: 137, ts: '2026-04-26 09:15:42', uid: 10004, name: '高橋 花子', type: '空き枠通知',
+        msg: '4/27 に空きが出ました（先着順）', status: 'success', email: 'takahashi@example.com' },
+      { id: 136, ts: '2026-04-25 14:20:30', uid: 10010, name: '加藤 結衣', type: 'その他',
+        msg: 'パスワード再設定リンクを送信しました', status: 'success', email: 'kato@example.com' },
+      { id: 135, ts: '2026-04-24 11:45:00', uid: 10009, name: '小林 海斗', type: 'その他',
+        msg: '5月のシフト希望が未提出です（締切 5/17）', status: 'success', email: 'kobayashi@example.com' },
+      { id: 134, ts: '2026-04-24 11:45:00', uid: 10003, name: '鈴木 三郎', type: 'その他',
+        msg: '5月のシフト希望が未提出です（締切 5/17）', status: 'success', email: 'suzuki@example.com' },
+      { id: 133, ts: '2026-04-22 09:00:15', uid: 10011, name: '吉田 翔', type: 'その他',
+        msg: '招待メールを送信しました（仮パスワード発行）', status: 'failed', email: 'yoshida_invalid@example.com', error: 'Address not found' },
+      { id: 132, ts: '2026-04-22 09:00:00', uid: 99, name: '管理者 山田', type: 'その他',
+        msg: '【規定違反】1日制約（30名到達）2026-05-14', status: 'success', email: 'yamada-admin@example.com' },
+      { id: 131, ts: '2026-04-21 16:30:00', uid: 10005, name: '伊藤 美咲', type: 'その他',
+        msg: 'プロフィール変更（カテゴリ: 在宅 → 在宅(関東)）', status: 'skipped', email: 'ito@example.com' },
+    ];
+
+    function statusPill(s) {
+      if (s === 'success') return '<span class="pill success">送信成功</span>';
+      if (s === 'failed') return '<span class="pill danger">送信失敗</span>';
+      if (s === 'skipped') return '<span class="pill muted">スキップ</span>';
+      return s;
+    }
+
+    function typePill(t) {
+      if (t === 'シフト確定通知') return '<span class="pill">シフト確定</span>';
+      if (t === '空き枠通知') return '<span class="pill warn">空き枠</span>';
+      return '<span class="pill muted">その他</span>';
+    }
+
+    function render() {
+      const from = document.getElementById('filterFrom').value;
+      const to = document.getElementById('filterTo').value;
+      const type = document.getElementById('filterType').value;
+      const user = document.getElementById('filterUser').value.trim();
+      const stat = document.getElementById('filterStatus').value;
+
+      const filtered = notifications.filter(n => {
+        const date = n.ts.substring(0, 10);
+        if (from && date < from) return false;
+        if (to && date > to) return false;
+        if (type && n.type !== type) return false;
+        if (stat && n.status !== stat) return false;
+        if (user) {
+          const q = user.toLowerCase();
+          if (!String(n.uid).includes(user) && !n.name.toLowerCase().includes(q)) return false;
+        }
+        return true;
+      });
+
+      const tbody = document.getElementById('notifTable');
+      tbody.innerHTML = filtered.map(n => `
+        <tr>
+          <td class="text-xs">${n.ts}</td>
+          <td>
+            <strong>${n.name}</strong><br>
+            <span class="text-xs text-muted">#${n.uid} ${n.email}</span>
+          </td>
+          <td>${typePill(n.type)}</td>
+          <td><div class="notif-msg">${n.msg}</div>${n.error ? `<span class="text-xs" style="color: var(--danger);">エラー: ${n.error}</span>` : ''}</td>
+          <td>${statusPill(n.status)}</td>
+          <td class="notif-actions">
+            ${n.status === 'failed'
+              ? `<button class="btn btn-sm btn-secondary" onclick="resend(${n.id})">再送信</button>`
+              : n.status === 'skipped'
+                ? '<span class="text-xs text-muted">—</span>'
+                : `<button class="btn btn-sm btn-secondary" onclick="alert('プレビュー（モック）\\n\\n本文: ${n.msg.replace(/'/g, '')}')">プレビュー</button>`
+            }
+          </td>
+        </tr>
+      `).join('');
+
+      document.getElementById('rowSummary').textContent =
+        `${filtered.length} 件を表示中（全 ${notifications.length} 件中）`;
+    }
+
+    function resetFilters() {
+      document.getElementById('filterFrom').value = '';
+      document.getElementById('filterTo').value = '';
+      document.getElementById('filterType').value = '';
+      document.getElementById('filterUser').value = '';
+      document.getElementById('filterStatus').value = '';
+      render();
+    }
+
+    function resend(id) {
+      const n = notifications.find(x => x.id === id);
+      if (!n) return;
+      if (confirm(`通知 #${id} を再送信します。\n宛先: ${n.email}\n\nよろしいですか？`)) {
+        n.status = 'success';
+        n.ts = new Date().toLocaleString('ja-JP', { hour12: false }).replace(/\//g, '-');
+        delete n.error;
+        alert('再送信しました（モック）');
+        render();
+      }
+    }
+
+    render();
+  </script>
+</body>
+</html>

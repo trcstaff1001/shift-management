@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>営業日カレンダー / シフト管理（管理）</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .bd-cal {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+      max-width: 560px;
+    }
+    .bd-cal .dow {
+      text-align: center;
+      padding: 8px 0;
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+    .bd-cal .dow.sun { color: var(--danger); }
+    .bd-cal .dow.sat { color: var(--primary); }
+    .bd-cell {
+      aspect-ratio: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--card-bg);
+      cursor: pointer;
+      font-weight: 500;
+      user-select: none;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .bd-cell.empty { background: transparent; border: none; cursor: default; }
+    .bd-cell.closed {
+      background: var(--disabled-bg);
+      color: var(--disabled-text);
+    }
+    .bd-cell .label {
+      font-size: 10px;
+      margin-top: 2px;
+      color: var(--text-soft);
+    }
+    .bd-cell.closed .label { color: var(--disabled-text); }
+    .bd-cell:hover:not(.empty) { border-color: var(--primary-light); }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <h1>シフト管理</h1>
+        <p>管理画面</p>
+      </div>
+      <nav>
+        <ul class="sidebar-nav">
+          <li class="group-label">運用</li>
+          <li><a href="dashboard.html">ダッシュボード</a></li>
+          <li><a href="adjust.html">シフト調整</a></li>
+          <li><a href="attendance.html">出欠管理</a></li>
+          <li class="group-label">マスタ</li>
+          <li><a href="users.html">利用者管理</a></li>
+          <li><a href="business_days.html" class="active">営業日カレンダー</a></li>
+          <li class="group-label">その他</li>
+          <li><a href="notifications.html">通知配信履歴</a></li>
+          <li><a href="login.html">ログアウト</a></li>
+        </ul>
+      </nav>
+      <div class="sidebar-foot">ver 0.2 (mock)</div>
+    </aside>
+
+    <div class="main">
+      <header class="main-header">
+        <h1>営業日カレンダー</h1>
+        <div class="header-actions">
+          <div class="month-nav">
+            <button class="month-nav-btn" data-dir="-1">←</button>
+            <span class="month-nav-current" id="monthCurrent">—</span>
+            <button class="month-nav-btn" data-dir="+1">→</button>
+          </div>
+          <button class="btn btn-success" onclick="alert('保存しました（モック）')">保存</button>
+        </div>
+      </header>
+
+      <div class="main-content">
+        <p class="page-lead">日付をクリックして開所/閉所を切り替えます。月の規定計算（§7）の分母に直結するため、慎重に設定してください。</p>
+
+        <div class="stat-grid">
+          <div class="stat">
+            <p class="stat-label">開所日数</p>
+            <p class="stat-value" id="openCount">—<span class="unit">日</span></p>
+            <p class="stat-meta">月間延べ上限 = 開所 × 20 × 1.25 = <strong id="monthlyMaxLabel">—</strong> 人日</p>
+          </div>
+          <div class="stat">
+            <p class="stat-label">閉所日数</p>
+            <p class="stat-value" id="closedCount">—<span class="unit">日</span></p>
+            <p class="stat-meta" id="closedMeta">日曜 + 祝日</p>
+          </div>
+          <div class="stat">
+            <p class="stat-label">利用者の月内上限</p>
+            <p class="stat-value" id="userLimit">—<span class="unit">日</span></p>
+            <p class="stat-meta" id="userLimitMeta">月の日数 - 8（規定で固定）</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title" id="targetMonthTitle">—</h2>
+          <div class="bd-cal" id="bdCal"></div>
+          <p class="text-xs text-muted mt-4">
+            ヒント: 日曜は自動で閉所として初期化されます。祝日は手動で設定してください。
+            月切替は URLハッシュ <code>#month=YYYY-MM</code> で保持されます。
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let target = getMonthFromHash();
+    // 月ごとの閉所セット（編集状態を月単位で保持）
+    const closedByMonth = {};
+
+    function getMonthFromHash() {
+      const m = location.hash.match(/month=(\d{4})-(\d{2})/);
+      if (m) return { y: +m[1], m: +m[2] };
+      return { y: 2026, m: 5 };
+    }
+    function setMonthHash(y, m) { location.hash = `month=${y}-${String(m).padStart(2, '0')}`; }
+    function key(t) { return `${t.y}-${String(t.m).padStart(2,'0')}`; }
+    function daysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
+
+    function defaultClosed(y, m) {
+      const closed = new Set();
+      const days = daysInMonth(y, m);
+      for (let d = 1; d <= days; d++) {
+        if (new Date(y, m - 1, d).getDay() === 0) closed.add(d);
+      }
+      // ダミー祝日
+      if (y === 2026 && m === 1) [1, 2, 3, 12].forEach(d => closed.add(d));
+      if (y === 2026 && m === 2) [11, 23].forEach(d => closed.add(d));
+      if (y === 2026 && m === 5) [3, 4, 5, 6].forEach(d => closed.add(d));
+      if (y === 2026 && m === 7) [20].forEach(d => closed.add(d));
+      if (y === 2026 && m === 11) [3, 23].forEach(d => closed.add(d));
+      return closed;
+    }
+
+    function getClosed() {
+      const k = key(target);
+      if (!(k in closedByMonth)) {
+        closedByMonth[k] = defaultClosed(target.y, target.m);
+      }
+      return closedByMonth[k];
+    }
+
+    function render() {
+      const { y, m } = target;
+      const days = daysInMonth(y, m);
+      const closed = getClosed();
+      const firstDow = new Date(y, m - 1, 1).getDay();
+
+      document.getElementById('monthCurrent').textContent = `${y}年${m}月`;
+      document.getElementById('targetMonthTitle').textContent = `${y}年${m}月`;
+
+      const cal = document.getElementById('bdCal');
+      cal.innerHTML = '';
+      ['日', '月', '火', '水', '木', '金', '土'].forEach((d, i) => {
+        const e = document.createElement('div');
+        e.className = 'dow' + (i === 0 ? ' sun' : i === 6 ? ' sat' : '');
+        e.textContent = d;
+        cal.appendChild(e);
+      });
+      for (let i = 0; i < firstDow; i++) {
+        const e = document.createElement('div');
+        e.className = 'bd-cell empty';
+        cal.appendChild(e);
+      }
+      for (let d = 1; d <= days; d++) {
+        const cell = document.createElement('div');
+        cell.className = 'bd-cell';
+        cell.dataset.day = d;
+        cell.innerHTML = `${d}<span class="label">${closed.has(d) ? '閉所' : '開所'}</span>`;
+        if (closed.has(d)) cell.classList.add('closed');
+        cell.addEventListener('click', () => {
+          if (closed.has(d)) closed.delete(d);
+          else closed.add(d);
+          render();
+        });
+        cal.appendChild(cell);
+      }
+
+      updateStats(y, m, days, closed);
+    }
+
+    function updateStats(y, m, days, closed) {
+      const closedCount = closed.size;
+      const openCount = days - closedCount;
+      const monthlyMax = openCount * 20 * 1.25;
+      const userLimit = days - 8;
+      document.getElementById('openCount').innerHTML = `${openCount}<span class="unit">日</span>`;
+      document.getElementById('closedCount').innerHTML = `${closedCount}<span class="unit">日</span>`;
+      document.getElementById('userLimit').innerHTML = `${userLimit}<span class="unit">日</span>`;
+      document.getElementById('monthlyMaxLabel').textContent = monthlyMax;
+      document.getElementById('userLimitMeta').textContent = `${y}年${m}月（${days}日）- 8 = ${userLimit}日（規定で固定）`;
+    }
+
+    document.querySelectorAll('.month-nav-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const dir = +btn.dataset.dir;
+        let y = target.y, m = target.m + dir;
+        if (m < 1) { m = 12; y--; } else if (m > 12) { m = 1; y++; }
+        setMonthHash(y, m);
+      });
+    });
+
+    window.addEventListener('hashchange', () => {
+      target = getMonthFromHash();
+      render();
+    });
+
+    render();
+  </script>
+</body>
+</html>

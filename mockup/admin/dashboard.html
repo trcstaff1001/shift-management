@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ダッシュボード / シフト管理（管理）</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <h1>シフト管理</h1>
+        <p>管理画面</p>
+      </div>
+      <nav>
+        <ul class="sidebar-nav">
+          <li class="group-label">運用</li>
+          <li><a href="dashboard.html" class="active">ダッシュボード</a></li>
+          <li><a href="adjust.html">シフト調整</a></li>
+          <li><a href="attendance.html">出欠管理</a></li>
+          <li class="group-label">マスタ</li>
+          <li><a href="users.html">利用者管理</a></li>
+          <li><a href="business_days.html">営業日カレンダー</a></li>
+          <li class="group-label">その他</li>
+          <li><a href="notifications.html">通知配信履歴</a></li>
+          <li><a href="login.html">ログアウト</a></li>
+        </ul>
+      </nav>
+      <div class="sidebar-foot">
+        ver 0.2 (mock)<br>
+        管理者: 山田 花子
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="main-header">
+        <h1>ダッシュボード</h1>
+        <div class="header-actions">
+          <span class="text-sm text-muted">2026年4月27日（月）</span>
+        </div>
+      </header>
+
+      <div class="main-content">
+        <p class="page-lead">運用状況の概観。規定遵守の状態を最優先で確認します。</p>
+
+        <!-- KPI -->
+        <div class="stat-grid">
+          <div class="stat">
+            <p class="stat-label">本日の通所予定</p>
+            <p class="stat-value">23<span class="unit">/ 30名</span></p>
+            <p class="stat-meta">うち施設外: 2名</p>
+          </div>
+          <div class="stat warn">
+            <p class="stat-label">今月の延べ利用人日</p>
+            <p class="stat-value">412<span class="unit">/ 450 (91.6%)</span></p>
+            <p class="stat-meta">5月の見込み: 110% 超の警告水準</p>
+          </div>
+          <div class="stat">
+            <p class="stat-label">確定済み利用者</p>
+            <p class="stat-value">38<span class="unit">名</span></p>
+            <p class="stat-meta">5月の希望提出: 36 / 38</p>
+          </div>
+          <div class="stat">
+            <p class="stat-label">未読通知（管理者宛）</p>
+            <p class="stat-value">3<span class="unit">件</span></p>
+            <p class="stat-meta">直近の欠勤連絡など</p>
+          </div>
+        </div>
+
+        <!-- 月間制約 3ヶ月推移 -->
+        <div class="card">
+          <h2 class="card-title">
+            月間利用率 — 3ヶ月平均（規定 §7）
+            <a href="#" class="card-action">詳細を見る</a>
+          </h2>
+          <p class="text-sm text-muted mb-3">
+            直近3ヶ月の平均が <strong>125%</strong> を超えると減算対象。当月の見込みを含めた現時点の平均は
+            <strong style="color: var(--warning);">118.7%</strong>（基準内、ただし要注意水準）。
+          </p>
+
+          <div class="trend">
+            <div class="trend-month">
+              <p class="trend-label">3月（実績）</p>
+              <p class="trend-value">112%</p>
+              <p class="trend-meta">延べ 504 / 450 人日</p>
+            </div>
+            <div class="trend-month">
+              <p class="trend-label">4月（実績）</p>
+              <p class="trend-value warn">122%</p>
+              <p class="trend-meta">延べ 549 / 450 人日</p>
+            </div>
+            <div class="trend-month current">
+              <p class="trend-label">5月（見込み）</p>
+              <p class="trend-value warn">122%</p>
+              <p class="trend-meta">確定 412 + 希望 137 / 450</p>
+            </div>
+          </div>
+
+          <div class="alert warn mt-4">
+            <strong>⚠ 警告:</strong>
+            <span>5月の単月超過が続くと3ヶ月平均が125%に到達する可能性があります。シフト調整画面で承認数の見直しを推奨。</span>
+          </div>
+        </div>
+
+        <!-- 今日の出欠 -->
+        <div class="card">
+          <h2 class="card-title">
+            本日の出欠記録
+            <a href="attendance.html" class="card-action">出欠管理へ</a>
+          </h2>
+          <p class="text-sm text-muted mb-3">2026年4月27日（月）の通所予定者の状況</p>
+          <div class="stat-grid" style="margin-bottom: 0;">
+            <div class="stat success">
+              <p class="stat-label">出勤</p>
+              <p class="stat-value">18<span class="unit">名</span></p>
+            </div>
+            <div class="stat danger">
+              <p class="stat-label">欠勤</p>
+              <p class="stat-value">2<span class="unit">名</span></p>
+            </div>
+            <div class="stat">
+              <p class="stat-label">未記録</p>
+              <p class="stat-value">3<span class="unit">名</span></p>
+              <p class="stat-meta">記録漏れに注意</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ToDo -->
+        <div class="card">
+          <h2 class="card-title">対応待ち</h2>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>項目</th>
+                  <th>対象</th>
+                  <th>期限</th>
+                  <th>アクション</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="pill warn">締切間近</span></td>
+                  <td>5月分シフト未提出: 2名</td>
+                  <td>2026/4/15（あと3日）</td>
+                  <td><a href="users.html" class="btn btn-secondary btn-sm">利用者を見る</a></td>
+                </tr>
+                <tr>
+                  <td><span class="pill">未確定</span></td>
+                  <td>5月の希望調整</td>
+                  <td>2026/4/30</td>
+                  <td><a href="adjust.html" class="btn btn-sm">調整画面へ</a></td>
+                </tr>
+                <tr>
+                  <td><span class="pill muted">通常</span></td>
+                  <td>本日の出欠未記録: 3名</td>
+                  <td>本日中</td>
+                  <td><a href="attendance.html" class="btn btn-secondary btn-sm">出欠記録</a></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

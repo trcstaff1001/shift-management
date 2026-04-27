@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ホーム / シフト管理</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="../../config.js"></script>
+  <script src="api.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <h1>シフト管理</h1>
+      <a class="text-sm text-muted" href="#" id="logoutLink">ログアウト</a>
+    </header>
+
+    <main class="app-main">
+      <p class="page-lead" style="margin-bottom: 16px;">こんにちは、<span id="userName">—</span>さん</p>
+      <p class="text-sm text-muted mb-5"><span id="userMeta">読み込み中…</span></p>
+
+      <ul class="action-list">
+        <li class="action-item">
+          <a class="action-link" href="request.html">
+            <div>
+              <strong>シフト希望を出す</strong>
+              <span>5月分（締切: 4/15）</span>
+            </div>
+          </a>
+        </li>
+        <li class="action-item">
+          <a class="action-link" href="calendar.html">
+            <div>
+              <strong>確定シフトを見る</strong>
+              <span>カレンダー表示</span>
+            </div>
+          </a>
+        </li>
+        <li class="action-item">
+          <a class="action-link" href="notifications.html">
+            <div>
+              <strong>お知らせ<span class="badge">2</span></strong>
+              <span>未読の通知が2件あります</span>
+            </div>
+          </a>
+        </li>
+        <li class="action-item">
+          <a class="action-link" href="profile.html">
+            <div>
+              <strong>プロフィール</strong>
+              <span>名前・パスワードの確認</span>
+            </div>
+          </a>
+        </li>
+      </ul>
+    </main>
+
+    <nav class="app-footer-nav">
+      <a href="home.html" class="active">ホーム</a>
+      <a href="request.html">希望</a>
+      <a href="calendar.html">シフト</a>
+      <a href="notifications.html">通知</a>
+    </nav>
+  </div>
+
+  <script>
+    ShiftAPI.requireSession();
+    const session = ShiftAPI.getSession();
+
+    // 初期表示はセッション情報で即埋める
+    document.getElementById('userName').textContent = session.name || '';
+    // カテゴリ表示は利用者画面では「在宅(関東)」も「在宅」と表示する規則
+    const displayCategory = session.category === '在宅(関東)' ? '在宅' : session.category;
+    // 月の利用上限は当月日数 - 8（クライアント側で算出）
+    const today = new Date();
+    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    const limit = daysInMonth - 8;
+    document.getElementById('userMeta').textContent =
+      'カテゴリ: ' + displayCategory + ' / 今月の利用上限: ' + limit + '日';
+
+    // ログアウト
+    document.getElementById('logoutLink').addEventListener('click', (e) => {
+      e.preventDefault();
+      if (confirm('ログアウトしますか？')) ShiftAPI.logout();
+    });
+  </script>
+</body>
+</html>

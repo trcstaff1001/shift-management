@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>出欠管理 / シフト管理（管理）</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <h1>シフト管理</h1>
+        <p>管理画面</p>
+      </div>
+      <nav>
+        <ul class="sidebar-nav">
+          <li class="group-label">運用</li>
+          <li><a href="dashboard.html">ダッシュボード</a></li>
+          <li><a href="adjust.html">シフト調整</a></li>
+          <li><a href="attendance.html" class="active">出欠管理</a></li>
+          <li class="group-label">マスタ</li>
+          <li><a href="users.html">利用者管理</a></li>
+          <li><a href="business_days.html">営業日カレンダー</a></li>
+          <li class="group-label">その他</li>
+          <li><a href="notifications.html">通知配信履歴</a></li>
+          <li><a href="login.html">ログアウト</a></li>
+        </ul>
+      </nav>
+      <div class="sidebar-foot">ver 0.2 (mock)</div>
+    </aside>
+
+    <div class="main">
+      <header class="main-header">
+        <h1>出欠管理</h1>
+        <div class="header-actions">
+          <div class="month-nav">
+            <button class="month-nav-btn" data-dir="-1" title="前日">←</button>
+            <input type="date" class="form-input" id="dateInput" style="max-width: 180px;">
+            <button class="month-nav-btn" data-dir="+1" title="翌日">→</button>
+          </div>
+          <button class="btn btn-secondary" id="todayBtn">今日</button>
+        </div>
+      </header>
+
+      <div class="main-content">
+        <p class="page-lead">通所予定者の出勤・欠勤を記録します。欠勤を記録すると、希望していた他の利用者に空き枠通知が自動送信されます。</p>
+
+        <div class="stat-grid">
+          <div class="stat success">
+            <p class="stat-label">出勤</p>
+            <p class="stat-value" id="presentCount">—<span class="unit">名</span></p>
+          </div>
+          <div class="stat danger">
+            <p class="stat-label">欠勤</p>
+            <p class="stat-value" id="absentCount">—<span class="unit">名</span></p>
+          </div>
+          <div class="stat warn">
+            <p class="stat-label">未記録</p>
+            <p class="stat-value" id="unrecordedCount">—<span class="unit">名</span></p>
+          </div>
+          <div class="stat">
+            <p class="stat-label">本日の予定者</p>
+            <p class="stat-value" id="totalCount">—<span class="unit">名</span></p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title">
+            <span id="dateLabel">—</span>
+            <span class="card-action text-muted text-sm">タップで出欠を切り替え</span>
+          </h2>
+
+          <div id="attendanceList"></div>
+          <p class="text-xs text-muted mt-3" id="emptyMsg" style="display: none;">この日付の通所予定者はいません。</p>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title">最近の欠勤連絡</h2>
+          <div class="table-wrap" style="margin-bottom: 0;">
+            <table class="table">
+              <thead>
+                <tr><th>日付</th><th>利用者</th><th>連絡経路</th><th>備考</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>4/27 09:12</td><td>佐藤 次郎</td><td><span class="pill muted">電話</span></td><td>体調不良</td></tr>
+                <tr><td>4/27 08:45</td><td>鈴木 三郎</td><td><span class="pill muted">家族連絡</span></td><td>通院</td></tr>
+                <tr><td>4/26 09:30</td><td>渡辺 健太</td><td><span class="pill muted">電話</span></td><td>—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ========== 状態 ==========
+    let target = getDateFromHash() || '2026-04-27';
+
+    function getDateFromHash() {
+      const m = location.hash.match(/date=(\d{4}-\d{2}-\d{2})/);
+      return m ? m[1] : null;
+    }
+    function setDateHash(dateStr) { location.hash = `date=${dateStr}`; }
+
+    function shiftDate(dateStr, days) {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const dt = new Date(y, m - 1, d);
+      dt.setDate(dt.getDate() + days);
+      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    }
+
+    // ========== ダミーデータ ==========
+    // 日付ごとに少しずつ違うリストを返す（再現性あり）
+    function generateUsersForDate(dateStr) {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const seed = y + m * 100 + d * 7;
+      const allUsers = [
+        { id: 10001, name: '田中 太郎', cat: '通所' },
+        { id: 10002, name: '佐藤 次郎', cat: '通所' },
+        { id: 10003, name: '鈴木 三郎', cat: '在宅' },
+        { id: 10004, name: '高橋 花子', cat: '通所' },
+        { id: 10005, name: '伊藤 美咲', cat: '在宅(関東)' },
+        { id: 10006, name: '渡辺 健太', cat: '通所' },
+        { id: 10007, name: '山本 直樹', cat: '在宅通所' },
+        { id: 10008, name: '中村 さくら', cat: '通所' },
+        { id: 10009, name: '小林 海斗', cat: '通所' },
+        { id: 10010, name: '加藤 結衣', cat: '在宅' },
+      ];
+      // 日曜は予定者0
+      const dt = new Date(y, m - 1, d);
+      if (dt.getDay() === 0) return [];
+
+      const states = ['present', 'absent', null, 'present', 'present'];
+      return allUsers
+        .filter((_, i) => (seed * (i + 1)) % 5 !== 0)  // 一部除外
+        .map((u, i) => ({
+          ...u,
+          state: states[(seed + i) % states.length],
+        }));
+    }
+
+    let todayUsers = [];
+
+    // ========== 描画 ==========
+    function render() {
+      document.getElementById('dateInput').value = target;
+
+      const [y, m, d] = target.split('-').map(Number);
+      const dowName = ['日', '月', '火', '水', '木', '金', '土'][new Date(y, m - 1, d).getDay()];
+      document.getElementById('dateLabel').textContent = `通所予定者一覧（${y}年${m}月${d}日 ${dowName}曜）`;
+
+      todayUsers = generateUsersForDate(target);
+      const total = todayUsers.length;
+      const present = todayUsers.filter(u => u.state === 'present').length;
+      const absent = todayUsers.filter(u => u.state === 'absent').length;
+      const unrecorded = todayUsers.filter(u => u.state === null).length;
+
+      document.getElementById('presentCount').innerHTML = `${present}<span class="unit">名</span>`;
+      document.getElementById('absentCount').innerHTML = `${absent}<span class="unit">名</span>`;
+      document.getElementById('unrecordedCount').innerHTML = `${unrecorded}<span class="unit">名</span>`;
+      document.getElementById('totalCount').innerHTML = `${total}<span class="unit">名</span>`;
+
+      const list = document.getElementById('attendanceList');
+      const emptyMsg = document.getElementById('emptyMsg');
+      if (total === 0) {
+        list.innerHTML = '';
+        emptyMsg.style.display = '';
+        return;
+      }
+      emptyMsg.style.display = 'none';
+      list.innerHTML = todayUsers.map((u, i) => `
+        <div class="attendance-row">
+          <div class="attendance-name">
+            ${u.name}
+            <span class="meta">#${u.id} / ${u.cat}</span>
+          </div>
+          <div class="attendance-toggle" data-idx="${i}">
+            <button class="present ${u.state === 'present' ? 'active' : ''}" data-state="present">出勤</button>
+            <button class="absent ${u.state === 'absent' ? 'active' : ''}" data-state="absent">欠勤</button>
+          </div>
+        </div>
+      `).join('');
+
+      list.querySelectorAll('.attendance-toggle').forEach(toggle => {
+        toggle.querySelectorAll('button').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const idx = +toggle.dataset.idx;
+            todayUsers[idx].state = btn.dataset.state;
+            render();
+          });
+        });
+      });
+    }
+
+    // ========== 日付切替 ==========
+    document.querySelectorAll('.month-nav-btn').forEach(btn => {
+      btn.addEventListener('click', () => setDateHash(shiftDate(target, +btn.dataset.dir)));
+    });
+    document.getElementById('dateInput').addEventListener('change', e => setDateHash(e.target.value));
+    document.getElementById('todayBtn').addEventListener('click', () => {
+      // モックなので「今日」=2026-04-27 固定
+      setDateHash('2026-04-27');
+    });
+    window.addEventListener('hashchange', () => {
+      target = getDateFromHash() || target;
+      render();
+    });
+
+    // 起動時にハッシュが無ければ初期値をハッシュに設定（リロードで状態保持）
+    if (!getDateFromHash()) setDateHash(target);
+    render();
+  </script>
+</body>
+</html>

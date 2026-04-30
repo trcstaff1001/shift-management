@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ダッシュボード / シフト管理（管理）</title>
   <link rel="stylesheet" href="style.css" />
+  <script src="../../config.js"></script>
+  <script src="api.js"></script>
 </head>
 <body>
   <div class="app">
@@ -27,17 +29,14 @@
           <li><a href="login.html">ログアウト</a></li>
         </ul>
       </nav>
-      <div class="sidebar-foot">
-        ver 0.2 (mock)<br>
-        管理者: 山田 花子
-      </div>
+      <div class="sidebar-foot">ver 0.3<br>管理者: 山田 花子</div>
     </aside>
 
     <div class="main">
       <header class="main-header">
         <h1>ダッシュボード</h1>
         <div class="header-actions">
-          <span class="text-sm text-muted">2026年4月27日（月）</span>
+          <span class="text-sm text-muted" id="todayLabel">—</span>
         </div>
       </header>
 
@@ -57,9 +56,9 @@
             <p class="stat-meta">5月の見込み: 110% 超の警告水準</p>
           </div>
           <div class="stat">
-            <p class="stat-label">確定済み利用者</p>
-            <p class="stat-value">38<span class="unit">名</span></p>
-            <p class="stat-meta">5月の希望提出: 36 / 38</p>
+            <p class="stat-label">利用中人数</p>
+            <p class="stat-value" id="kpiActiveUsers">—<span class="unit">名</span></p>
+            <p class="stat-meta" id="kpiSubmitStatus">希望提出: 読み込み中…</p>
           </div>
           <div class="stat">
             <p class="stat-label">未読通知（管理者宛）</p>
@@ -68,17 +67,31 @@
           </div>
         </div>
 
-        <!-- 月間制約 3ヶ月推移 -->
+        <!-- エクスポート -->
+        <div class="card">
+          <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:180px;">
+              <h2 class="card-title" style="margin-bottom:4px;">シフトエクスポート</h2>
+              <p class="text-sm text-muted" style="margin:0;">確定済みシフトをスプレッドシートに出力します</p>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center; flex-shrink:0;">
+              <input type="month" class="form-input" id="exportMonth" value="2026-05" style="max-width:160px;">
+              <button class="btn btn-primary" id="exportBtn">📊 生成する</button>
+            </div>
+          </div>
+          <div id="exportResult" style="display:none; margin-top:12px;"></div>
+        </div>
+
+        <!-- 月間制約 推移 -->
         <div class="card">
           <h2 class="card-title">
-            月間利用率 — 3ヶ月平均（規定 §7）
-            <a href="#" class="card-action">詳細を見る</a>
+            月間利用率 — 単月推移（規定 §7）
+            <a href="adjust.html" class="card-action">調整画面へ</a>
           </h2>
           <p class="text-sm text-muted mb-3">
-            直近3ヶ月の平均が <strong>125%</strong> を超えると減算対象。当月の見込みを含めた現時点の平均は
-            <strong style="color: var(--warning);">118.7%</strong>（基準内、ただし要注意水準）。
+            単月利用率が <strong>125%</strong> を超えると減算対象。
+            当月見込みは <strong style="color: var(--warning);">118.7%</strong>（要注意水準）。
           </p>
-
           <div class="trend">
             <div class="trend-month">
               <p class="trend-label">3月（実績）</p>
@@ -92,24 +105,23 @@
             </div>
             <div class="trend-month current">
               <p class="trend-label">5月（見込み）</p>
-              <p class="trend-value warn">122%</p>
-              <p class="trend-meta">確定 412 + 希望 137 / 450</p>
+              <p class="trend-value warn">118%</p>
+              <p class="trend-meta">確定 412 + 希望 120 / 450</p>
             </div>
           </div>
-
           <div class="alert warn mt-4">
             <strong>⚠ 警告:</strong>
-            <span>5月の単月超過が続くと3ヶ月平均が125%に到達する可能性があります。シフト調整画面で承認数の見直しを推奨。</span>
+            <span>5月の単月超過が続くと125%に到達する可能性があります。シフト調整画面で承認数の見直しを推奨。</span>
           </div>
         </div>
 
-        <!-- 今日の出欠 -->
+        <!-- 本日の出欠 -->
         <div class="card">
           <h2 class="card-title">
             本日の出欠記録
             <a href="attendance.html" class="card-action">出欠管理へ</a>
           </h2>
-          <p class="text-sm text-muted mb-3">2026年4月27日（月）の通所予定者の状況</p>
+          <p class="text-sm text-muted mb-3" id="todayAttLabel">—</p>
           <div class="stat-grid" style="margin-bottom: 0;">
             <div class="stat success">
               <p class="stat-label">出勤</p>
@@ -127,26 +139,15 @@
           </div>
         </div>
 
-        <!-- ToDo -->
+        <!-- 対応待ち -->
         <div class="card">
           <h2 class="card-title">対応待ち</h2>
           <div class="table-wrap">
             <table class="table">
               <thead>
-                <tr>
-                  <th>項目</th>
-                  <th>対象</th>
-                  <th>期限</th>
-                  <th>アクション</th>
-                </tr>
+                <tr><th>項目</th><th>対象</th><th>期限</th><th>アクション</th></tr>
               </thead>
-              <tbody>
-                <tr>
-                  <td><span class="pill warn">締切間近</span></td>
-                  <td>5月分シフト未提出: 2名</td>
-                  <td>2026/4/15（あと3日）</td>
-                  <td><a href="users.html" class="btn btn-secondary btn-sm">利用者を見る</a></td>
-                </tr>
+              <tbody id="todoTable">
                 <tr>
                   <td><span class="pill">未確定</span></td>
                   <td>5月の希望調整</td>
@@ -166,5 +167,78 @@
       </div>
     </div>
   </div>
+
+  <script>
+    // ===== 日付表示 =====
+    const now    = new Date();
+    const DOW    = ['日', '月', '火', '水', '木', '金', '土'];
+    const today  = now.getFullYear() + '年' + (now.getMonth() + 1) + '月' + now.getDate() + '日（' + DOW[now.getDay()] + '）';
+    document.getElementById('todayLabel').textContent    = today;
+    document.getElementById('todayAttLabel').textContent = today + 'の通所予定者の状況';
+
+    // ===== KPI: 利用者数・提出状況 =====
+    const CURRENT_MONTH = '2026-05'; // モック対象月
+    (async function loadKpi() {
+      try {
+        const [users, requests] = await Promise.all([
+          ShiftAdminAPI.listUsers('利用中'),
+          ShiftAdminAPI.listShiftRequests({ month: CURRENT_MONTH }).catch(() => []),
+        ]);
+        const activeCount  = users.length;
+        const submittedIds = new Set(requests.map(r => Number(r.user_id)));
+        const submittedCnt = users.filter(u => submittedIds.has(Number(u.user_id))).length;
+        const notSubmitted = activeCount - submittedCnt;
+
+        document.getElementById('kpiActiveUsers').innerHTML =
+          activeCount + '<span class="unit">名</span>';
+
+        const statusEl = document.getElementById('kpiSubmitStatus');
+        if (notSubmitted > 0) {
+          statusEl.innerHTML = '5月希望提出: ' + submittedCnt + ' / ' + activeCount +
+            '　<span style="color:var(--warning);font-weight:600;">未提出 ' + notSubmitted + '名</span>';
+          // 対応待ちテーブルに追記
+          const tr = document.createElement('tr');
+          tr.innerHTML = '<td><span class="pill warn">締切間近</span></td>' +
+            '<td>5月分シフト未提出: ' + notSubmitted + '名</td>' +
+            '<td>2026/4/30</td>' +
+            '<td><a href="users.html" class="btn btn-secondary btn-sm">利用者を見る</a></td>';
+          document.getElementById('todoTable').prepend(tr);
+        } else {
+          statusEl.textContent = '5月希望提出: ' + submittedCnt + ' / ' + activeCount + '　全員提出済';
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+
+    // ===== エクスポート =====
+    document.getElementById('exportBtn').addEventListener('click', async () => {
+      const btn      = document.getElementById('exportBtn');
+      const month    = document.getElementById('exportMonth').value;
+      if (!month) { alert('月を選択してください'); return; }
+
+      btn.disabled   = true;
+      btn.textContent = '生成中…';
+
+      const resultEl = document.getElementById('exportResult');
+      try {
+        const res = await ShiftAdminAPI.exportSpreadsheet(month);
+        const [y, m] = month.split('-').map(Number);
+        resultEl.style.display = '';
+        resultEl.innerHTML = [
+          '<div style="display:flex;align-items:center;justify-content:space-between;',
+          'background:#e8f5e9;border:1px solid #c8e6c9;border-radius:8px;padding:12px 16px;">',
+          '<span style="color:#2e7d32;font-weight:600;">✓ ' + y + '年' + m + '月 の生成完了（' + res.generated_at + '）</span>',
+          '<a href="' + res.url + '" target="_blank" class="btn btn-sm"',
+          ' style="background:#2e7d32;color:#fff;flex-shrink:0;">📊 スプレッドシートを開く</a>',
+          '</div>',
+        ].join('');
+      } catch (e) {
+        alert('エクスポートに失敗しました: ' + e.message);
+      }
+      btn.disabled   = false;
+      btn.textContent = '📊 生成する';
+    });
+  </script>
 </body>
 </html>

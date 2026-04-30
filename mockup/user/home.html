@@ -7,6 +7,82 @@
   <link rel="stylesheet" href="style.css" />
   <script src="../../config.js"></script>
   <script src="api.js"></script>
+  <style>
+    /* 今日のシフトカード */
+    .today-card {
+      margin-bottom: 24px;
+      transition: background 0.2s;
+    }
+    .today-card-loading {
+      background: #f5f5f5;
+      color: #aaa;
+      font-size: 14px;
+      padding: 18px 20px;
+      text-align: center;
+    }
+    .today-card-on {
+      background: linear-gradient(135deg, #e8f0fe 0%, #e6f4ea 100%);
+      border-color: #b3cdf8;
+    }
+    .today-card-off {
+      background: #fafafa;
+      border-color: #e0e0e0;
+    }
+    .today-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .today-date {
+      font-size: 15px;
+      font-weight: 600;
+      color: #333;
+    }
+    .today-badge-on {
+      font-size: 11px;
+      font-weight: 700;
+      background: #1565c0;
+      color: #fff;
+      border-radius: 999px;
+      padding: 2px 10px;
+    }
+    .today-badge-off {
+      font-size: 11px;
+      color: #aaa;
+    }
+    .today-off-msg {
+      font-size: 14px;
+      color: #aaa;
+      margin: 0;
+    }
+    .today-clocked {
+      font-size: 15px;
+      font-weight: 600;
+      color: #333;
+      margin: 0 0 12px;
+    }
+    .today-done {
+      font-size: 14px;
+      font-weight: 700;
+      color: #2e7d32;
+      margin: 0;
+    }
+    .btn-clock {
+      display: block;
+      width: 100%;
+      padding: 14px 0;
+      border: none;
+      border-radius: 10px;
+      font-size: 17px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn-clock:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-clock-in  { background: #1565c0; color: #fff; }
+    .btn-clock-out { background: #c62828; color: #fff; }
+  </style>
 </head>
 <body>
   <div class="app">
@@ -16,8 +92,11 @@
     </header>
 
     <main class="app-main">
-      <p class="page-lead" style="margin-bottom: 16px;">こんにちは、<span id="userName">—</span>さん</p>
-      <p class="text-sm text-muted mb-5"><span id="userMeta">読み込み中…</span></p>
+      <p class="page-lead" style="margin-bottom: 4px;">こんにちは、<span id="userName">—</span>さん</p>
+      <p class="text-sm text-muted" style="margin-bottom: 20px;"><span id="userMeta">読み込み中…</span></p>
+
+      <!-- 今日のシフトカード -->
+      <div class="card today-card today-card-loading" id="todayCard">確認中…</div>
 
       <ul class="action-list">
         <li class="action-item">
@@ -39,8 +118,8 @@
         <li class="action-item">
           <a class="action-link" href="notifications.html">
             <div>
-              <strong>お知らせ<span class="badge">2</span></strong>
-              <span>未読の通知が2件あります</span>
+              <strong>お知らせ<span class="badge" id="notifBadge" style="display:none;">0</span></strong>
+              <span id="notifLead">通知を確認する</span>
             </div>
           </a>
         </li>
@@ -67,22 +146,140 @@
     ShiftAPI.requireSession();
     const session = ShiftAPI.getSession();
 
-    // 初期表示はセッション情報で即埋める
+    // ユーザー情報表示
     document.getElementById('userName').textContent = session.name || '';
-    // カテゴリ表示は利用者画面では「在宅(関東)」も「在宅」と表示する規則
     const displayCategory = session.category === '在宅(関東)' ? '在宅' : session.category;
-    // 月の利用上限は当月日数 - 8（クライアント側で算出）
     const today = new Date();
     const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-    const limit = daysInMonth - 8;
     document.getElementById('userMeta').textContent =
-      'カテゴリ: ' + displayCategory + ' / 今月の利用上限: ' + limit + '日';
+      'カテゴリ: ' + displayCategory + ' / 今月の利用上限: ' + (daysInMonth - 8) + '日';
 
     // ログアウト
-    document.getElementById('logoutLink').addEventListener('click', (e) => {
+    document.getElementById('logoutLink').addEventListener('click', e => {
       e.preventDefault();
       if (confirm('ログアウトしますか？')) ShiftAPI.logout();
     });
+
+    // ===== 未読バッジ =====
+    (async function loadBadge() {
+      try {
+        const res   = await ShiftAPI.getUnreadCount();
+        const count = (res && typeof res === 'object') ? (Number(res.count) || 0) : Number(res);
+        const badge = document.getElementById('notifBadge');
+        const lead  = document.getElementById('notifLead');
+        if (count > 0) {
+          badge.textContent   = count > 9 ? '9+' : String(count);
+          badge.style.display = 'inline-block';
+          lead.textContent    = '未読の通知が' + count + '件あります';
+        }
+      } catch (e) { /* ignore */ }
+    })();
+
+    // ===== 今日のシフトカード =====
+    // モック「今日」= 2026-05-12。本番では実際の日付を使う
+    const TODAY_STR = ShiftAPI.isMockMode() ? '2026-05-12' : (function () {
+      const d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    })();
+    const TODAY_MONTH = TODAY_STR.substring(0, 7);
+    const [TY, TM, TD] = TODAY_STR.split('-').map(Number);
+    const DOW_NAMES   = ['日', '月', '火', '水', '木', '金', '土'];
+    const TODAY_LABEL = TM + '月' + TD + '日（' + DOW_NAMES[new Date(TY, TM - 1, TD).getDay()] + '）';
+
+    let todayAtt       = null;
+    let todayConfirmed = false;
+
+    function fmtTime(t) {
+      const m = t && t.match(/(\d{2}):(\d{2})/);
+      return m ? m[1] + ':' + m[2] : (t || '');
+    }
+
+    function renderTodayCard() {
+      const card = document.getElementById('todayCard');
+
+      if (!todayConfirmed) {
+        card.className   = 'card today-card today-card-off';
+        card.innerHTML   = [
+          '<div class="today-header">',
+          '  <span class="today-date">' + TODAY_LABEL + '</span>',
+          '  <span class="today-badge-off">予定なし</span>',
+          '</div>',
+          '<p class="today-off-msg">今日の通所予定はありません</p>',
+        ].join('');
+        return;
+      }
+
+      card.className = 'card today-card today-card-on';
+      const header   = [
+        '<div class="today-header">',
+        '  <span class="today-date">' + TODAY_LABEL + '</span>',
+        '  <span class="today-badge-on">通所日</span>',
+        '</div>',
+      ].join('');
+
+      const ci = todayAtt && todayAtt.clock_in  ? fmtTime(todayAtt.clock_in)  : null;
+      const co = todayAtt && todayAtt.clock_out ? fmtTime(todayAtt.clock_out) : null;
+
+      let body;
+      if (!ci) {
+        body = '<button class="btn-clock btn-clock-in" id="homeClockInBtn">出勤する</button>';
+      } else if (!co) {
+        body = [
+          '<p class="today-clocked">出勤: ' + ci + '</p>',
+          '<button class="btn-clock btn-clock-out" id="homeClockOutBtn">退勤する</button>',
+        ].join('');
+      } else {
+        body = [
+          '<p class="today-clocked">出勤: ' + ci + '　退勤: ' + co + '</p>',
+          '<p class="today-done">打刻が完了しました ✓</p>',
+        ].join('');
+      }
+
+      card.innerHTML = header + body;
+
+      const btnIn  = document.getElementById('homeClockInBtn');
+      const btnOut = document.getElementById('homeClockOutBtn');
+      if (btnIn)  btnIn.addEventListener('click',  doClockIn);
+      if (btnOut) btnOut.addEventListener('click', doClockOut);
+    }
+
+    async function doClockIn() {
+      const btn = document.getElementById('homeClockInBtn');
+      if (btn) btn.disabled = true;
+      try {
+        todayAtt = await ShiftAPI.clockIn(TODAY_STR);
+        renderTodayCard();
+      } catch (e) {
+        alert('出勤打刻に失敗しました: ' + e.message);
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function doClockOut() {
+      const btn = document.getElementById('homeClockOutBtn');
+      if (btn) btn.disabled = true;
+      try {
+        todayAtt = await ShiftAPI.clockOut(TODAY_STR);
+        renderTodayCard();
+      } catch (e) {
+        alert('退勤打刻に失敗しました: ' + e.message);
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    (async function loadTodayCard() {
+      try {
+        const [rows, att] = await Promise.all([
+          ShiftAPI.listMyShiftRequests(TODAY_MONTH),
+          ShiftAPI.getTodayAttendance(TODAY_STR),
+        ]);
+        todayConfirmed = rows.some(r => String(r.date) === TODAY_STR && r.status === '承認');
+        todayAtt       = att;
+      } catch (e) {
+        console.error(e);
+      }
+      renderTodayCard();
+    })();
   </script>
 </body>
 </html>

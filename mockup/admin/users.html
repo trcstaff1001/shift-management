@@ -7,6 +7,10 @@
   <link rel="stylesheet" href="style.css" />
   <script src="../../config.js"></script>
   <script src="api.js"></script>
+  <style>
+    .cw-set   { font-size: 12px; color: #555; font-variant-numeric: tabular-nums; }
+    .cw-unset { font-size: 12px; color: #f57c00; font-weight: 600; }
+  </style>
 </head>
 <body>
   <div class="app">
@@ -29,54 +33,50 @@
           <li><a href="login.html">ログアウト</a></li>
         </ul>
       </nav>
-      <div class="sidebar-foot">ver 0.2 (mock)</div>
+      <div class="sidebar-foot">ver 0.3</div>
     </aside>
 
     <div class="main">
       <header class="main-header">
         <h1>利用者管理</h1>
         <div class="header-actions">
-          <button class="btn" onclick="document.getElementById('inviteModal').classList.add('is-open')">+ 新規招待</button>
+          <button class="btn" id="inviteOpenBtn">+ 新規招待</button>
         </div>
       </header>
 
       <div class="main-content">
-        <p class="page-lead">利用者の登録・カテゴリ変更・利用停止を行います。メールアドレスがない方には `xxxx@local` 形式のダミーIDを発行できます。</p>
+        <p class="page-lead">利用者の登録・カテゴリ変更・ChatWork設定を行います。メールアドレスがない方には <code>xxxx@local</code> 形式のダミーIDを発行できます。</p>
 
         <div class="stat-grid">
           <div class="stat success">
             <p class="stat-label">利用中</p>
-            <p class="stat-value">38<span class="unit">名</span></p>
+            <p class="stat-value" id="kpiActive">—<span class="unit">名</span></p>
           </div>
           <div class="stat">
-            <p class="stat-label">通所</p>
-            <p class="stat-value">22<span class="unit">名</span></p>
+            <p class="stat-label">ChatWork 設定済</p>
+            <p class="stat-value" id="kpiCw">—<span class="unit">名</span></p>
+            <p class="stat-meta" id="kpiCwUnset">未設定: — 名</p>
           </div>
-          <div class="stat">
-            <p class="stat-label">在宅</p>
-            <p class="stat-value">12<span class="unit">名</span></p>
-          </div>
-          <div class="stat warn">
+          <div class="stat warn" id="kpiSubmitStat" style="display:none;">
             <p class="stat-label">5月希望未提出</p>
-            <p class="stat-value">2<span class="unit">名</span></p>
+            <p class="stat-value" id="kpiSubmit">—<span class="unit">名</span></p>
           </div>
         </div>
 
         <div class="card">
           <div class="search-bar">
-            <input type="text" class="form-input" placeholder="名前・ID・メールで検索">
-            <select class="form-select" style="max-width: 160px;">
-              <option>すべてのカテゴリ</option>
+            <input type="text" class="form-input" id="searchInput" placeholder="名前・ID・メールで検索">
+            <select class="form-select" id="filterCat" style="max-width: 160px;">
+              <option value="">すべてのカテゴリ</option>
               <option>通所</option>
               <option>在宅</option>
               <option>在宅(関東)</option>
               <option>在宅通所</option>
             </select>
-            <select class="form-select" style="max-width: 140px;">
-              <option>利用中</option>
-              <option>停止</option>
-              <option>退所</option>
-              <option>すべて</option>
+            <select class="form-select" id="filterStatus" style="max-width: 140px;">
+              <option value="利用中">利用中</option>
+              <option value="停止">停止</option>
+              <option value="">すべて</option>
             </select>
           </div>
 
@@ -88,12 +88,15 @@
                   <th>名前</th>
                   <th>カテゴリ</th>
                   <th>メール</th>
+                  <th>ChatWork</th>
                   <th>状態</th>
                   <th>5月希望</th>
                   <th>操作</th>
                 </tr>
               </thead>
-              <tbody id="userTable"></tbody>
+              <tbody id="userTable">
+                <tr><td colspan="8" class="text-muted" style="text-align:center;padding:24px;">読み込み中…</td></tr>
+              </tbody>
             </table>
           </div>
           <p class="text-xs text-muted mt-3" id="rowSummary"></p>
@@ -109,101 +112,256 @@
       <p>メールアドレスを入力すると招待メールが送信されます。メールがない方は「ダミーID発行」をご利用ください。</p>
       <div class="form-group">
         <label>名前</label>
-        <input type="text" class="form-input" placeholder="例: 田中 太郎">
+        <input type="text" class="form-input" id="inviteName" placeholder="例: 田中 太郎">
       </div>
       <div class="form-group">
         <label>メールアドレス</label>
-        <input type="email" class="form-input" placeholder="例: tanaka@example.com">
+        <input type="email" class="form-input" id="inviteEmail" placeholder="例: tanaka@example.com">
       </div>
       <div class="form-group">
         <label>カテゴリ</label>
-        <select class="form-select">
-          <option>通所</option>
-          <option>在宅</option>
-          <option>在宅(関東)</option>
-          <option>在宅通所</option>
+        <select class="form-select" id="inviteCat">
+          <option>通所</option><option>在宅</option><option>在宅(関東)</option><option>在宅通所</option>
         </select>
       </div>
-      <div style="display: flex; gap: 12px;">
-        <button class="btn" style="flex: 1;" onclick="alert('招待メール送信しました（モック）'); document.getElementById('inviteModal').classList.remove('is-open');">招待を送信</button>
-        <button class="btn btn-secondary" style="flex: 1;" onclick="alert('ダミーID発行: tanaka_a3f@local（モック）'); document.getElementById('inviteModal').classList.remove('is-open');">ダミーID発行</button>
+      <div style="display:flex; gap:12px;">
+        <button class="btn" style="flex:1;" id="inviteSendBtn">招待を送信</button>
+        <button class="btn btn-secondary" style="flex:1;" id="inviteDummyBtn">ダミーID発行</button>
       </div>
-      <button class="btn btn-secondary mt-3" style="width: 100%;" onclick="document.getElementById('inviteModal').classList.remove('is-open')">キャンセル</button>
+      <button class="btn btn-secondary mt-3" style="width:100%;" id="inviteCancelBtn">キャンセル</button>
+    </div>
+  </div>
+
+  <!-- 編集モーダル -->
+  <div class="modal-overlay" id="editModal">
+    <div class="modal">
+      <h2>利用者情報を編集</h2>
+      <input type="hidden" id="editUserId">
+      <div class="form-group">
+        <label>名前</label>
+        <p id="editUserName" style="margin:4px 0 0; font-weight:600;"></p>
+      </div>
+      <div class="form-group">
+        <label>カテゴリ</label>
+        <select class="form-select" id="editCategory">
+          <option>通所</option><option>在宅</option><option>在宅(関東)</option><option>在宅通所</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>
+          ChatWork ルームID
+          <span class="text-xs text-muted" style="font-weight:normal;">（利用者との1on1トークルーム）</span>
+        </label>
+        <input type="text" class="form-input" id="editChatworkRoomId"
+               placeholder="例: 123456789" inputmode="numeric">
+        <p class="text-xs text-muted mt-1">
+          ChatWork の個別トークURL末尾の数字を入力。未設定だと確定通知が届きません。
+        </p>
+      </div>
+      <div id="editError" class="alert danger" style="display:none; margin-bottom:12px;"></div>
+      <div style="display:flex; gap:12px;">
+        <button class="btn" style="flex:1;" id="editSaveBtn">保存する</button>
+        <button class="btn btn-secondary" style="flex:1;" id="editCancelBtn">キャンセル</button>
+      </div>
     </div>
   </div>
 
   <script>
-    // ----- データ取得（API or モック） -----
-    // ShiftRequests から「5月希望」の提出状況を集計し、各ユーザーに付加する。
+    // ===== モジュール状態 =====
+    let allUsers    = [];   // API から取得した全利用者（編集後も再描画に使う）
+    let editingUser = null;
+
+    // ===== データ取得 =====
     async function loadUsers() {
-      const [users, shiftRequests] = await Promise.all([
-        ShiftAdminAPI.listUsers(),                                // status 指定なし = 全件
+      const [users, requests] = await Promise.all([
+        ShiftAdminAPI.listUsers(),
         ShiftAdminAPI.listShiftRequests({ month: '2026-05' }).catch(() => []),
       ]);
-
-      // 5月希望提出済みのユーザーIDセット
-      const submittedIds = new Set(shiftRequests.map(r => Number(r.user_id)));
-
+      const submittedIds = new Set(requests.map(r => Number(r.user_id)));
       return users.map(u => ({
-        id: Number(u.user_id),
-        name: u.name,
-        cat: u.category,
-        email: u.email,
-        status: u.status,
-        mayReq: u.status !== '利用中' ? '—'
-              : submittedIds.has(Number(u.user_id)) ? '提出済'
-              : '未提出',
+        ...u,
+        id:         Number(u.user_id),
+        cat:        u.category,
+        mayReq:     u.status !== '利用中' ? '—'
+                    : submittedIds.has(Number(u.user_id)) ? '提出済' : '未提出',
       }));
     }
 
-    // ----- 描画 -----
-    const tbody = document.getElementById('userTable');
-    function renderTable(users) {
-      tbody.innerHTML = users.map(u => {
-        const statusPill = u.status === '利用中' ? '<span class="pill success">利用中</span>'
-          : u.status === '停止' ? '<span class="pill muted">停止</span>'
-          : '<span class="pill muted">退所</span>';
-        const reqPill = u.mayReq === '提出済' ? '<span class="pill success">提出済</span>'
-          : u.mayReq === '未提出' ? '<span class="pill warn">未提出</span>'
-          : '<span class="text-muted text-xs">—</span>';
-        const proxyDisabled = u.status !== '利用中';
-        return `<tr>
-          <td>#${u.id}</td>
-          <td><strong>${u.name}</strong></td>
-          <td>${u.cat}</td>
-          <td class="text-sm">${u.email}</td>
-          <td>${statusPill}</td>
-          <td>${reqPill}</td>
-          <td>
-            <a href="#" class="btn btn-secondary btn-sm">編集</a>
-            ${proxyDisabled
-              ? '<button class="btn btn-secondary btn-sm" disabled title="停止/退所中は代理入力不可">代理入力</button>'
-              : `<a href="proxy_request.html?uid=${u.id}" class="btn btn-secondary btn-sm">代理入力</a>`}
-          </td>
-        </tr>`;
-      }).join('');
-      document.getElementById('rowSummary').textContent = `${users.length} 名を表示中`;
-    }
-
-    // ----- 招待モーダル -----
-    function bindInviteModal() {
-      // モーダル overlay クリックで閉じる
-      document.getElementById('inviteModal').addEventListener('click', (e) => {
-        if (e.target.id === 'inviteModal') e.target.classList.remove('is-open');
+    // ===== 描画 =====
+    function applyFilters() {
+      const q      = document.getElementById('searchInput').value.toLowerCase();
+      const cat    = document.getElementById('filterCat').value;
+      const status = document.getElementById('filterStatus').value;
+      const filtered = allUsers.filter(u => {
+        if (status && u.status !== status) return false;
+        if (cat    && u.cat    !== cat)    return false;
+        if (q && !u.name.toLowerCase().includes(q) &&
+                 !String(u.id).includes(q) &&
+                 !(u.email || '').toLowerCase().includes(q)) return false;
+        return true;
       });
-      // 招待・ダミーID 発行ボタンの onclick は HTML 側で alert を出している暫定実装。
-      // 実APIへの差し替えは admin v0.3 で行う前提（users.invite を呼び、戻り値で行を追加）。
+      renderTable(filtered);
     }
 
-    // ----- 起動 -----
-    (async function init() {
-      bindInviteModal();
+    function renderTable(users) {
+      const tbody = document.getElementById('userTable');
+      if (users.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-muted" style="text-align:center;padding:24px;">該当する利用者が見つかりません</td></tr>';
+        document.getElementById('rowSummary').textContent = '';
+        return;
+      }
+
+      tbody.innerHTML = users.map(u => {
+        const statusPill = u.status === '利用中'
+          ? '<span class="pill success">利用中</span>'
+          : '<span class="pill muted">' + u.status + '</span>';
+        const reqPill = u.mayReq === '提出済'
+          ? '<span class="pill success">提出済</span>'
+          : u.mayReq === '未提出'
+            ? '<span class="pill warn">未提出</span>'
+            : '<span class="text-muted text-xs">—</span>';
+        const cwHtml = u.chatwork_room_id
+          ? '<span class="cw-set">' + u.chatwork_room_id + '</span>'
+          : '<span class="cw-unset">未設定</span>';
+        const canProxy = u.status === '利用中';
+        return [
+          '<tr>',
+          '<td>#' + u.id + '</td>',
+          '<td><strong>' + u.name + '</strong></td>',
+          '<td>' + u.cat + '</td>',
+          '<td class="text-sm">' + (u.email || '') + '</td>',
+          '<td>' + cwHtml + '</td>',
+          '<td>' + statusPill + '</td>',
+          '<td>' + reqPill + '</td>',
+          '<td>',
+          '  <button class="btn btn-secondary btn-sm edit-btn" data-id="' + u.id + '">編集</button>',
+          '  ' + (canProxy
+              ? '<a href="proxy_request.html?uid=' + u.id + '" class="btn btn-secondary btn-sm">代理入力</a>'
+              : '<button class="btn btn-secondary btn-sm" disabled title="停止/退所中は不可">代理入力</button>'),
+          '</td>',
+          '</tr>',
+        ].join('');
+      }).join('');
+
+      document.getElementById('rowSummary').textContent = users.length + ' 名を表示中';
+
+      // 編集ボタンのイベント
+      tbody.querySelectorAll('.edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const u = allUsers.find(x => x.id === +btn.dataset.id);
+          if (u) openEditModal(u);
+        });
+      });
+    }
+
+    function updateKpi() {
+      const active  = allUsers.filter(u => u.status === '利用中');
+      const cwSet   = active.filter(u => u.chatwork_room_id);
+      const cwUnset = active.length - cwSet.length;
+      const noReq   = active.filter(u => u.mayReq === '未提出').length;
+
+      document.getElementById('kpiActive').innerHTML  = active.length + '<span class="unit">名</span>';
+      document.getElementById('kpiCw').innerHTML      = cwSet.length  + '<span class="unit">名</span>';
+      document.getElementById('kpiCwUnset').textContent = '未設定: ' + cwUnset + ' 名';
+
+      if (noReq > 0) {
+        document.getElementById('kpiSubmit').innerHTML = noReq + '<span class="unit">名</span>';
+        document.getElementById('kpiSubmitStat').style.display = '';
+      }
+    }
+
+    // ===== 編集モーダル =====
+    function openEditModal(user) {
+      editingUser = user;
+      document.getElementById('editUserId').value        = user.id;
+      document.getElementById('editUserName').textContent = user.name + '（#' + user.id + '）';
+      document.getElementById('editCategory').value      = user.cat;
+      document.getElementById('editChatworkRoomId').value = user.chatwork_room_id || '';
+      document.getElementById('editError').style.display = 'none';
+      document.getElementById('editModal').classList.add('is-open');
+    }
+
+    document.getElementById('editSaveBtn').addEventListener('click', async () => {
+      const btn    = document.getElementById('editSaveBtn');
+      const roomId = document.getElementById('editChatworkRoomId').value.trim();
+
+      if (roomId && !/^\d+$/.test(roomId)) {
+        const errEl = document.getElementById('editError');
+        errEl.textContent = 'ChatWork ルームIDは数字のみで入力してください';
+        errEl.style.display = '';
+        return;
+      }
+
+      btn.disabled    = true;
+      btn.textContent = '保存中…';
       try {
-        const users = await loadUsers();
-        renderTable(users);
+        await ShiftAdminAPI.updateChatworkRoomId(editingUser.id, roomId);
+        // ローカル状態を更新して即再描画
+        editingUser.chatwork_room_id = roomId;
+        updateKpi();
+        applyFilters();
+        document.getElementById('editModal').classList.remove('is-open');
+      } catch (e) {
+        const errEl = document.getElementById('editError');
+        errEl.textContent = '保存に失敗しました: ' + e.message;
+        errEl.style.display = '';
+      }
+      btn.disabled    = false;
+      btn.textContent = '保存する';
+    });
+
+    document.getElementById('editCancelBtn').addEventListener('click', () => {
+      document.getElementById('editModal').classList.remove('is-open');
+    });
+    document.getElementById('editModal').addEventListener('click', e => {
+      if (e.target.id === 'editModal') document.getElementById('editModal').classList.remove('is-open');
+    });
+
+    // ===== 招待モーダル =====
+    document.getElementById('inviteOpenBtn').addEventListener('click', () => {
+      document.getElementById('inviteModal').classList.add('is-open');
+    });
+    document.getElementById('inviteCancelBtn').addEventListener('click', () => {
+      document.getElementById('inviteModal').classList.remove('is-open');
+    });
+    document.getElementById('inviteModal').addEventListener('click', e => {
+      if (e.target.id === 'inviteModal') document.getElementById('inviteModal').classList.remove('is-open');
+    });
+    document.getElementById('inviteSendBtn').addEventListener('click', async () => {
+      const name  = document.getElementById('inviteName').value.trim();
+      const email = document.getElementById('inviteEmail').value.trim();
+      const cat   = document.getElementById('inviteCat').value;
+      if (!name || !email) { alert('名前とメールアドレスを入力してください'); return; }
+      await ShiftAdminAPI.inviteUser({ name, email, category: cat });
+      alert('招待メールを送信しました（モック）');
+      document.getElementById('inviteModal').classList.remove('is-open');
+    });
+    document.getElementById('inviteDummyBtn').addEventListener('click', async () => {
+      const name = document.getElementById('inviteName').value.trim();
+      const cat  = document.getElementById('inviteCat').value;
+      if (!name) { alert('名前を入力してください'); return; }
+      const dummyEmail = name.replace(/\s/g, '').toLowerCase().slice(0, 6) + '_' +
+        Math.random().toString(36).slice(2, 5) + '@local';
+      await ShiftAdminAPI.inviteUser({ name, email: dummyEmail, category: cat });
+      alert('ダミーID発行: ' + dummyEmail + '（モック）');
+      document.getElementById('inviteModal').classList.remove('is-open');
+    });
+
+    // ===== フィルター =====
+    document.getElementById('searchInput').addEventListener('input', applyFilters);
+    document.getElementById('filterCat').addEventListener('change', applyFilters);
+    document.getElementById('filterStatus').addEventListener('change', applyFilters);
+
+    // ===== 起動 =====
+    (async function init() {
+      try {
+        allUsers = await loadUsers();
+        updateKpi();
+        applyFilters();
       } catch (err) {
         console.error(err);
-        tbody.innerHTML = `<tr><td colspan="7" class="text-muted">読み込みに失敗しました: ${err.message}</td></tr>`;
+        document.getElementById('userTable').innerHTML =
+          '<tr><td colspan="8" class="text-muted">読み込みに失敗しました: ' + err.message + '</td></tr>';
       }
     })();
   </script>

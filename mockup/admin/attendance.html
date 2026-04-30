@@ -5,6 +5,42 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>出欠管理 / シフト管理（管理）</title>
   <link rel="stylesheet" href="style.css" />
+  <script src="../../config.js"></script>
+  <script src="api.js"></script>
+  <style>
+    .clock-time {
+      font-size: 12px;
+      color: #555;
+      font-variant-numeric: tabular-nums;
+    }
+    .clock-time.missing { color: #bbb; font-style: italic; }
+    .attendance-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .attendance-row:last-child { border-bottom: none; }
+    .attendance-clocks {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2px;
+      min-width: 80px;
+    }
+    .no-att-section {
+      margin-top: 8px;
+      padding: 10px 14px;
+      background: #fff8e1;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #795548;
+    }
+    .no-att-section strong { display: block; margin-bottom: 6px; color: #5d4037; }
+    .no-att-item { padding: 2px 0; }
+  </style>
 </head>
 <body>
   <div class="app">
@@ -73,6 +109,12 @@
 
           <div id="attendanceList"></div>
           <p class="text-xs text-muted mt-3" id="emptyMsg" style="display: none;">この日付の通所予定者はいません。</p>
+
+          <!-- 未打刻者セクション -->
+          <div class="no-att-section" id="noClockSection" style="display:none;">
+            <strong>未打刻（打刻なし）</strong>
+            <div id="noClockList"></div>
+          </div>
         </div>
 
         <div class="card">
@@ -97,22 +139,28 @@
   <script>
     // ========== 状態 ==========
     let target = getDateFromHash() || '2026-04-27';
+    let todayUsers = []; // { id, name, cat, state, clock_in, clock_out }
 
     function getDateFromHash() {
       const m = location.hash.match(/date=(\d{4}-\d{2}-\d{2})/);
       return m ? m[1] : null;
     }
-    function setDateHash(dateStr) { location.hash = `date=${dateStr}`; }
+    function setDateHash(dateStr) { location.hash = 'date=' + dateStr; }
 
     function shiftDate(dateStr, days) {
       const [y, m, d] = dateStr.split('-').map(Number);
       const dt = new Date(y, m - 1, d);
       dt.setDate(dt.getDate() + days);
-      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+      return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
     }
 
-    // ========== ダミーデータ ==========
-    // 日付ごとに少しずつ違うリストを返す（再現性あり）
+    function fmtClock(t) {
+      if (!t) return null;
+      const m = t.match(/(\d{2}):(\d{2})/);
+      return m ? m[1] + ':' + m[2] : t;
+    }
+
+    // ========== データ取得 ==========
     function generateUsersForDate(dateStr) {
       const [y, m, d] = dateStr.split('-').map(Number);
       const seed = y + m * 100 + d * 7;
@@ -128,20 +176,30 @@
         { id: 10009, name: '小林 海斗', cat: '通所' },
         { id: 10010, name: '加藤 結衣', cat: '在宅' },
       ];
-      // 日曜は予定者0
       const dt = new Date(y, m - 1, d);
       if (dt.getDay() === 0) return [];
 
       const states = ['present', 'absent', null, 'present', 'present'];
       return allUsers
-        .filter((_, i) => (seed * (i + 1)) % 5 !== 0)  // 一部除外
-        .map((u, i) => ({
-          ...u,
-          state: states[(seed + i) % states.length],
-        }));
+        .filter((_, i) => (seed * (i + 1)) % 5 !== 0)
+        .map((u, i) => {
+          const state = states[(seed + i) % states.length];
+          // モック打刻: state=present の一部に打刻時刻を付与
+          const hasClock = state === 'present' && (seed + i) % 3 !== 0;
+          return {
+            ...u,
+            state,
+            clock_in:  hasClock ? '09:' + String(5 + ((seed + i) % 12)).padStart(2, '0') : null,
+            clock_out: hasClock && (seed + i) % 2 === 0 ? '13:' + String(0 + ((seed + i) % 20)).padStart(2, '0') : null,
+          };
+        });
     }
 
-    let todayUsers = [];
+    // データ取得（モック）。将来 ShiftAdminAPI.listAttendances(target) に差し替え
+    function loadData(dateStr) {
+      todayUsers = generateUsersForDate(dateStr);
+      render();
+    }
 
     // ========== 描画 ==========
     function render() {
@@ -149,39 +207,56 @@
 
       const [y, m, d] = target.split('-').map(Number);
       const dowName = ['日', '月', '火', '水', '木', '金', '土'][new Date(y, m - 1, d).getDay()];
-      document.getElementById('dateLabel').textContent = `通所予定者一覧（${y}年${m}月${d}日 ${dowName}曜）`;
+      document.getElementById('dateLabel').textContent =
+        '通所予定者一覧（' + y + '年' + m + '月' + d + '日 ' + dowName + '曜）';
 
-      todayUsers = generateUsersForDate(target);
-      const total = todayUsers.length;
-      const present = todayUsers.filter(u => u.state === 'present').length;
-      const absent = todayUsers.filter(u => u.state === 'absent').length;
-      const unrecorded = todayUsers.filter(u => u.state === null).length;
+      const total       = todayUsers.length;
+      const present     = todayUsers.filter(u => u.state === 'present').length;
+      const absent      = todayUsers.filter(u => u.state === 'absent').length;
+      const unrecorded  = todayUsers.filter(u => u.state === null).length;
 
-      document.getElementById('presentCount').innerHTML = `${present}<span class="unit">名</span>`;
-      document.getElementById('absentCount').innerHTML = `${absent}<span class="unit">名</span>`;
-      document.getElementById('unrecordedCount').innerHTML = `${unrecorded}<span class="unit">名</span>`;
-      document.getElementById('totalCount').innerHTML = `${total}<span class="unit">名</span>`;
+      document.getElementById('presentCount').innerHTML    = present    + '<span class="unit">名</span>';
+      document.getElementById('absentCount').innerHTML     = absent     + '<span class="unit">名</span>';
+      document.getElementById('unrecordedCount').innerHTML = unrecorded + '<span class="unit">名</span>';
+      document.getElementById('totalCount').innerHTML      = total      + '<span class="unit">名</span>';
 
-      const list = document.getElementById('attendanceList');
+      const list     = document.getElementById('attendanceList');
       const emptyMsg = document.getElementById('emptyMsg');
+
       if (total === 0) {
         list.innerHTML = '';
         emptyMsg.style.display = '';
+        document.getElementById('noClockSection').style.display = 'none';
         return;
       }
       emptyMsg.style.display = 'none';
-      list.innerHTML = todayUsers.map((u, i) => `
-        <div class="attendance-row">
-          <div class="attendance-name">
-            ${u.name}
-            <span class="meta">#${u.id} / ${u.cat}</span>
-          </div>
-          <div class="attendance-toggle" data-idx="${i}">
-            <button class="present ${u.state === 'present' ? 'active' : ''}" data-state="present">出勤</button>
-            <button class="absent ${u.state === 'absent' ? 'active' : ''}" data-state="absent">欠勤</button>
-          </div>
-        </div>
-      `).join('');
+
+      list.innerHTML = todayUsers.map((u, i) => {
+        const ci = fmtClock(u.clock_in);
+        const co = fmtClock(u.clock_out);
+        const clockHtml = (u.state === 'present' || u.clock_in)
+          ? [
+              '<div class="attendance-clocks">',
+              '  <span class="clock-time' + (ci ? '' : ' missing') + '">出: ' + (ci || '—') + '</span>',
+              '  <span class="clock-time' + (co ? '' : ' missing') + '">退: ' + (co || '—') + '</span>',
+              '</div>',
+            ].join('')
+          : '<div class="attendance-clocks"></div>';
+
+        return [
+          '<div class="attendance-row">',
+          '  <div class="attendance-name">',
+          '    ' + u.name,
+          '    <span class="meta">#' + u.id + ' / ' + u.cat + '</span>',
+          '  </div>',
+          clockHtml,
+          '  <div class="attendance-toggle" data-idx="' + i + '">',
+          '    <button class="present' + (u.state === 'present' ? ' active' : '') + '" data-state="present">出勤</button>',
+          '    <button class="absent'  + (u.state === 'absent'  ? ' active' : '') + '" data-state="absent">欠勤</button>',
+          '  </div>',
+          '</div>',
+        ].join('');
+      }).join('');
 
       list.querySelectorAll('.attendance-toggle').forEach(toggle => {
         toggle.querySelectorAll('button').forEach(btn => {
@@ -192,6 +267,19 @@
           });
         });
       });
+
+      // 未打刻者セクション（出勤記録があるが clock_in なし）
+      const noClock = todayUsers.filter(u => u.state === 'present' && !u.clock_in);
+      const noClockSec  = document.getElementById('noClockSection');
+      const noClockList = document.getElementById('noClockList');
+      if (noClock.length > 0) {
+        noClockList.innerHTML = noClock.map(u =>
+          '<div class="no-att-item">・' + u.name + '（' + u.cat + '）</div>'
+        ).join('');
+        noClockSec.style.display = '';
+      } else {
+        noClockSec.style.display = 'none';
+      }
     }
 
     // ========== 日付切替 ==========
@@ -200,17 +288,15 @@
     });
     document.getElementById('dateInput').addEventListener('change', e => setDateHash(e.target.value));
     document.getElementById('todayBtn').addEventListener('click', () => {
-      // モックなので「今日」=2026-04-27 固定
-      setDateHash('2026-04-27');
+      setDateHash('2026-04-27'); // モック「今日」
     });
     window.addEventListener('hashchange', () => {
       target = getDateFromHash() || target;
-      render();
+      loadData(target);
     });
 
-    // 起動時にハッシュが無ければ初期値をハッシュに設定（リロードで状態保持）
     if (!getDateFromHash()) setDateHash(target);
-    render();
+    loadData(target);
   </script>
 </body>
 </html>

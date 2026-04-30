@@ -7,18 +7,159 @@
   <link rel="stylesheet" href="style.css" />
   <script src="../../config.js"></script>
   <script src="api.js"></script>
+  <style>
+    /* ベルボタン */
+    .bell-btn {
+      position: relative;
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      padding: 4px 8px;
+      color: inherit;
+      min-width: 60px;
+      text-align: center;
+      line-height: 1;
+    }
+    .bell-badge {
+      position: absolute;
+      top: 0;
+      right: 4px;
+      background: var(--danger, #e53e3e);
+      color: #fff;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: bold;
+      min-width: 18px;
+      height: 18px;
+      line-height: 18px;
+      text-align: center;
+      padding: 0 4px;
+      pointer-events: none;
+    }
+
+    /* 通知ドロワー */
+    .notif-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      z-index: 1000;
+      display: flex;
+      align-items: flex-end;
+    }
+    .notif-overlay[hidden] { display: none; }
+    .notif-drawer {
+      background: #fff;
+      width: 100%;
+      max-height: 72vh;
+      border-radius: 16px 16px 0 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .notif-drawer-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px 12px;
+      border-bottom: 1px solid #eee;
+      flex-shrink: 0;
+    }
+    .notif-drawer-header strong { font-size: 16px; }
+    .notif-close {
+      background: none;
+      border: none;
+      font-size: 22px;
+      cursor: pointer;
+      color: #888;
+      line-height: 1;
+      padding: 0 4px;
+    }
+    .notif-list {
+      flex: 1;
+      overflow-y: auto;
+      padding-bottom: 4px;
+    }
+    .notif-item {
+      padding: 14px 20px;
+      border-bottom: 1px solid #f0f0f0;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .notif-item.unread { background: #f5f8ff; }
+    .notif-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--primary, #4a6cf7);
+      margin-top: 5px;
+      flex-shrink: 0;
+    }
+    .notif-item.read .notif-dot { background: transparent; }
+    .notif-body { flex: 1; min-width: 0; }
+    .notif-type { font-size: 11px; color: #999; margin-bottom: 3px; }
+    .notif-msg  { font-size: 14px; color: #222; margin: 0 0 4px; }
+    .notif-time { font-size: 11px; color: #bbb; }
+    .notif-drawer-footer {
+      padding: 12px 20px;
+      border-top: 1px solid #eee;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .notif-drawer-footer a { font-size: 13px; color: var(--primary, #4a6cf7); }
+
+    /* 打刻カード */
+    .clock-card {
+      background: linear-gradient(135deg, #f0f7ff 0%, #e8f5e9 100%);
+      border: 1px solid #c3d9f5;
+      margin-bottom: 16px;
+    }
+    .clock-card .card-title { color: #1565c0; margin-bottom: 6px; }
+    .clock-date  { font-size: 13px; color: #555; margin-bottom: 10px; }
+    .clock-record { font-size: 15px; font-weight: 600; color: #333; margin-bottom: 10px; }
+    .clock-done  { font-size: 14px; color: #2e7d32; font-weight: bold; margin-bottom: 4px; }
+    .clock-actions { display: flex; gap: 10px; }
+    .btn-clock {
+      flex: 1;
+      padding: 13px 0;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn-clock:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-clock-in  { background: #1565c0; color: #fff; }
+    .btn-clock-out { background: #c62828; color: #fff; }
+  </style>
 </head>
 <body>
   <div class="app">
     <header class="app-header">
       <a class="back-link" href="home.html">ホーム</a>
       <h1>確定シフト</h1>
-      <span style="width: 60px;"></span>
+      <button class="bell-btn" id="bellBtn" aria-label="お知らせ">
+        🔔
+        <span class="bell-badge" id="bellBadge" style="display:none;">0</span>
+      </button>
     </header>
 
     <main class="app-main">
       <h2 class="page-title">5月のシフト</h2>
       <p class="page-lead">確定した通所日です</p>
+
+      <!-- 打刻カード（当日に確定シフトがある場合のみ表示） -->
+      <div class="card clock-card" id="clockCard" style="display:none;">
+        <h3 class="card-title">今日の打刻</h3>
+        <p class="clock-date" id="clockDate"></p>
+        <p class="clock-record" id="clockRecord" style="display:none;"></p>
+        <p class="clock-done"  id="clockDone"   style="display:none;">打刻が完了しました ✓</p>
+        <div class="clock-actions" id="clockActions"></div>
+      </div>
 
       <div class="calendar-nav">
         <button type="button" aria-label="前月">‹</button>
@@ -60,6 +201,23 @@
       <a href="calendar.html" class="active">シフト</a>
       <a href="notifications.html">通知</a>
     </nav>
+
+    <!-- 通知ドロワー -->
+    <div class="notif-overlay" id="notifOverlay" hidden>
+      <div class="notif-drawer">
+        <div class="notif-drawer-header">
+          <strong>お知らせ</strong>
+          <button class="notif-close" id="notifClose" aria-label="閉じる">×</button>
+        </div>
+        <div class="notif-list" id="notifList">
+          <p style="padding:24px;color:#999;text-align:center;">読み込み中…</p>
+        </div>
+        <div class="notif-drawer-footer">
+          <button class="btn btn-secondary" id="markAllReadBtn" style="font-size:13px;padding:8px 14px;">すべて既読</button>
+          <a href="notifications.html">すべて見る →</a>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -67,7 +225,9 @@
     const MONTH = 5;
     const DAYS_IN_MONTH = 31;
     const FIRST_DOW = new Date(YEAR, MONTH - 1, 1).getDay();
-    const TODAY = 12;
+    const TODAY = 12; // モック: 5/12 を「今日」扱い
+    const TODAY_DATE = YEAR + '-' + String(MONTH).padStart(2, '0') + '-' + String(TODAY).padStart(2, '0');
+    const DOW_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
 
     const closedDates = new Set();
     for (let d = 1; d <= DAYS_IN_MONTH; d++) {
@@ -75,15 +235,15 @@
     }
     [3, 4, 5, 6].forEach(d => closedDates.add(d));
 
-    // 初期描画は空のカレンダー（API取得後に色を付ける）
     let confirmedDates = new Set();
-    const externalDates = new Set();   // shiftConfirmed.list 未実装のため一旦空
+    const externalDates = new Set();
     let requestedDates = new Set();
     let rejectedDates = new Set();
+    let todayAtt = null; // { attendance_id, status, clock_in, clock_out }
 
+    // ===== カレンダー描画 =====
     const cal = document.getElementById('calendar');
     function render() {
-      // ヘッダーを残してクリア
       Array.from(cal.querySelectorAll('.cell')).forEach(n => n.remove());
       for (let i = 0; i < FIRST_DOW; i++) {
         const empty = document.createElement('div');
@@ -94,27 +254,28 @@
         const cell = document.createElement('div');
         cell.className = 'cell';
         cell.textContent = d;
-        if (closedDates.has(d)) {
-          cell.classList.add('closed');
-        } else if (confirmedDates.has(d)) {
+        if (closedDates.has(d))         cell.classList.add('closed');
+        else if (confirmedDates.has(d)) {
           cell.classList.add('confirmed');
-          if (externalDates.has(d)) cell.classList.add('external');
-        } else if (requestedDates.has(d)) {
-          cell.classList.add('requested');
-        } else if (rejectedDates.has(d)) {
-          cell.classList.add('rejected');
+          if (externalDates.has(d))     cell.classList.add('external');
         }
+        else if (requestedDates.has(d)) cell.classList.add('requested');
+        else if (rejectedDates.has(d))  cell.classList.add('rejected');
         if (d === TODAY) cell.classList.add('today');
         cal.appendChild(cell);
       }
+      renderClockCard();
     }
     render();
 
-    // ----- API から取得 -----
-    // shiftConfirmed.list は未実装のため、ShiftRequests を status で振り分けて暫定表示。
-    //   status='承認'  → 確定（緑）
-    //   status='提出済' → 希望（青）
-    //   status='不承認' → 取り消し線
+    function updateSummary() {
+      const el = document.getElementById('summary');
+      if (el) el.innerHTML =
+        '確定: <strong style="color:var(--success);">' + confirmedDates.size + '日</strong> ／ ' +
+        '希望（未確定）: <strong>' + requestedDates.size + '日</strong>';
+    }
+
+    // ===== API: シフト読み込み =====
     ShiftAPI.requireSession();
     (async function loadShifts() {
       try {
@@ -124,19 +285,18 @@
         rows.forEach(row => {
           const day = Number(String(row.date).split('-')[2]);
           if (!day) return;
-          if (row.status === '承認') c.add(day);
+          if (row.status === '承認')   c.add(day);
           else if (row.status === '提出済') r.add(day);
           else if (row.status === '不承認') j.add(day);
         });
         confirmedDates = c;
         requestedDates = r;
-        rejectedDates = j;
+        rejectedDates  = j;
         render();
         updateSummary();
       } catch (err) {
         if (err.message !== 'NO_SESSION') {
           console.error(err);
-          // モック時は固定データを使う
           if (ShiftAPI.isMockMode()) {
             confirmedDates = new Set([1, 2, 7, 8, 9, 12, 13, 14, 15, 19, 20, 21]);
             externalDates.add(15);
@@ -148,11 +308,168 @@
       }
     })();
 
-    function updateSummary() {
-      const sum = document.getElementById('summary');
-      if (sum) sum.innerHTML =
-        '確定: <strong style="color: var(--success);">' + confirmedDates.size + '日</strong> ／ ' +
-        '希望（未確定）: <strong>' + requestedDates.size + '日</strong>';
+    // ===== 打刻カード =====
+    function formatClockTime(t) {
+      if (!t) return '';
+      const m = t.match(/(\d{2}):(\d{2})/);
+      return m ? m[1] + ':' + m[2] : t;
+    }
+
+    function renderClockCard() {
+      const card    = document.getElementById('clockCard');
+      const dateEl  = document.getElementById('clockDate');
+      const recEl   = document.getElementById('clockRecord');
+      const doneEl  = document.getElementById('clockDone');
+      const actEl   = document.getElementById('clockActions');
+
+      if (TODAY <= 0 || !confirmedDates.has(TODAY)) {
+        card.style.display = 'none';
+        return;
+      }
+
+      const dow = DOW_NAMES[new Date(YEAR, MONTH - 1, TODAY).getDay()];
+      dateEl.textContent = MONTH + '月' + TODAY + '日（' + dow + '）今日は通所日です';
+      card.style.display = '';
+
+      const ci = todayAtt && todayAtt.clock_in  ? formatClockTime(todayAtt.clock_in)  : null;
+      const co = todayAtt && todayAtt.clock_out ? formatClockTime(todayAtt.clock_out) : null;
+
+      if (!ci) {
+        recEl.style.display = 'none';
+        doneEl.style.display = 'none';
+        actEl.innerHTML = '<button class="btn-clock btn-clock-in" id="clockInBtn">出勤する</button>';
+        document.getElementById('clockInBtn').addEventListener('click', doClockIn);
+      } else if (ci && !co) {
+        recEl.textContent = '出勤: ' + ci;
+        recEl.style.display = '';
+        doneEl.style.display = 'none';
+        actEl.innerHTML = '<button class="btn-clock btn-clock-out" id="clockOutBtn">退勤する</button>';
+        document.getElementById('clockOutBtn').addEventListener('click', doClockOut);
+      } else {
+        recEl.textContent = '出勤: ' + ci + '　退勤: ' + co;
+        recEl.style.display = '';
+        doneEl.style.display = '';
+        actEl.innerHTML = '';
+      }
+    }
+
+    async function doClockIn() {
+      const btn = document.getElementById('clockInBtn');
+      if (btn) btn.disabled = true;
+      try {
+        todayAtt = await ShiftAPI.clockIn(TODAY_DATE);
+        renderClockCard();
+      } catch (e) {
+        alert('出勤打刻に失敗しました: ' + e.message);
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function doClockOut() {
+      const btn = document.getElementById('clockOutBtn');
+      if (btn) btn.disabled = true;
+      try {
+        todayAtt = await ShiftAPI.clockOut(TODAY_DATE);
+        renderClockCard();
+      } catch (e) {
+        alert('退勤打刻に失敗しました: ' + e.message);
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    // 今日の打刻状態をバックグラウンドで取得
+    (async function loadTodayAtt() {
+      try {
+        todayAtt = await ShiftAPI.getTodayAttendance(TODAY_DATE);
+        renderClockCard();
+      } catch (e) { /* ignore */ }
+    })();
+
+    // ===== ベル / 通知ドロワー =====
+    const notifOverlay = document.getElementById('notifOverlay');
+    const notifListEl  = document.getElementById('notifList');
+    let notifLoaded = false;
+
+    // バッジ取得
+    (async function loadBadge() {
+      try {
+        const res = await ShiftAPI.getUnreadCount();
+        const count = (res && typeof res === 'object') ? (Number(res.count) || 0) : Number(res);
+        const badge = document.getElementById('bellBadge');
+        if (count > 0) {
+          badge.textContent = count > 9 ? '9+' : String(count);
+          badge.style.display = '';
+        }
+      } catch (e) { /* ignore */ }
+    })();
+
+    document.getElementById('bellBtn').addEventListener('click', async () => {
+      notifOverlay.hidden = false;
+      if (!notifLoaded) {
+        try {
+          const items = await ShiftAPI.listNotifications();
+          renderNotifList(items);
+          notifLoaded = true;
+        } catch (e) {
+          notifListEl.innerHTML = '<p style="padding:24px;color:#c00;text-align:center;">読み込みに失敗しました</p>';
+        }
+      }
+    });
+
+    notifOverlay.addEventListener('click', e => {
+      if (e.target === notifOverlay) notifOverlay.hidden = true;
+    });
+    document.getElementById('notifClose').addEventListener('click', () => {
+      notifOverlay.hidden = true;
+    });
+
+    document.getElementById('markAllReadBtn').addEventListener('click', async () => {
+      try {
+        await ShiftAPI.markRead();
+        document.getElementById('bellBadge').style.display = 'none';
+        notifListEl.querySelectorAll('.notif-item').forEach(el => {
+          el.classList.remove('unread');
+          el.classList.add('read');
+          const dot = el.querySelector('.notif-dot');
+          if (dot) dot.style.background = 'transparent';
+        });
+      } catch (e) { /* ignore */ }
+    });
+
+    function _fmtNotifDate(s) {
+      const m = s && s.match(/(\d{4})-(\d{2})-(\d{2})(?:\s(\d{2}):(\d{2}))?/);
+      if (!m) return s || '';
+      const mo = m[2].replace(/^0/, '');
+      const d  = m[3].replace(/^0/, '');
+      return mo + '/' + d + (m[4] ? ' ' + m[4] + ':' + m[5] : '');
+    }
+
+    function _fmtNotifMsg(type, targetDate) {
+      const monthLabel = targetDate ? targetDate.substring(0, 7).replace('-', '年') + '月' : '';
+      const dayLabel   = targetDate ? targetDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$2/$3').replace(/\/0/, '/').replace(/^0/, '') : '';
+      if (type === 'シフト確定通知') return monthLabel + 'のシフトが確定しました';
+      if (type === '空き枠通知')     return dayLabel + 'に空きが出ました';
+      return type;
+    }
+
+    function renderNotifList(items) {
+      if (!items || items.length === 0) {
+        notifListEl.innerHTML = '<p style="padding:24px;color:#999;text-align:center;">通知はありません</p>';
+        return;
+      }
+      notifListEl.innerHTML = items.map(n => {
+        const isRead = String(n.is_read).toUpperCase() === 'TRUE';
+        return [
+          '<div class="notif-item ' + (isRead ? 'read' : 'unread') + '">',
+          '  <div class="notif-dot"' + (isRead ? ' style="background:transparent"' : '') + '></div>',
+          '  <div class="notif-body">',
+          '    <div class="notif-type">' + n.type + '</div>',
+          '    <div class="notif-msg">'  + _fmtNotifMsg(n.type, n.target_date) + '</div>',
+          '    <div class="notif-time">' + _fmtNotifDate(n.created_at) + '</div>',
+          '  </div>',
+          '</div>',
+        ].join('');
+      }).join('');
     }
   </script>
 </body>

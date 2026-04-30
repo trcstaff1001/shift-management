@@ -286,6 +286,12 @@ button { font-family: inherit; font-size: inherit; cursor: pointer; }
   vertical-align: middle;
 }
 
+/* action-link 内の span ルールに上書きされないよう詳細度を上げる */
+.action-link .badge {
+  display: inline-block;
+  color: #fff;
+}
+
 /* ----- Calendar ----- */
 .calendar-nav {
   display: flex;

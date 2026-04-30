@@ -57,17 +57,17 @@
   // ===== モックデータ =====
 
   const MOCK_USERS = [
-    { user_id: 10001, name: '田中 太郎', category: '通所',     email: 'tanaka@example.com',     status: '利用中' },
-    { user_id: 10002, name: '佐藤 次郎', category: '通所',     email: 'sato@example.com',       status: '利用中' },
-    { user_id: 10003, name: '鈴木 三郎', category: '在宅',     email: 'suzuki@example.com',     status: '利用中' },
-    { user_id: 10004, name: '高橋 花子', category: '通所',     email: 'takahashi@example.com',  status: '利用中' },
-    { user_id: 10005, name: '伊藤 美咲', category: '在宅(関東)', email: 'ito@example.com',        status: '利用中' },
-    { user_id: 10006, name: '渡辺 健太', category: '通所',     email: 'watanabe_e7@local',      status: '利用中' },
-    { user_id: 10007, name: '山本 直樹', category: '在宅通所', email: 'yamamoto@example.com',   status: '利用中' },
-    { user_id: 10008, name: '中村 さくら', category: '通所',     email: 'nakamura@example.com',   status: '利用中' },
-    { user_id: 10009, name: '小林 海斗', category: '通所',     email: 'kobayashi@example.com',  status: '利用中' },
-    { user_id: 10010, name: '加藤 結衣', category: '在宅',     email: 'kato@example.com',       status: '利用中' },
-    { user_id: 10011, name: '吉田 翔',   category: '通所',     email: 'yoshida@example.com',    status: '停止' },
+    { user_id: 10001, name: '田中 太郎',   category: '通所',       email: 'tanaka@example.com',    status: '利用中', chatwork_room_id: '111222333' },
+    { user_id: 10002, name: '佐藤 次郎',   category: '通所',       email: 'sato@example.com',      status: '利用中', chatwork_room_id: '444555666' },
+    { user_id: 10003, name: '鈴木 三郎',   category: '在宅',       email: 'suzuki@example.com',    status: '利用中', chatwork_room_id: '' },
+    { user_id: 10004, name: '高橋 花子',   category: '通所',       email: 'takahashi@example.com', status: '利用中', chatwork_room_id: '777888999' },
+    { user_id: 10005, name: '伊藤 美咲',   category: '在宅(関東)', email: 'ito@example.com',       status: '利用中', chatwork_room_id: '101010101' },
+    { user_id: 10006, name: '渡辺 健太',   category: '通所',       email: 'watanabe_e7@local',     status: '利用中', chatwork_room_id: '' },
+    { user_id: 10007, name: '山本 直樹',   category: '在宅通所',   email: 'yamamoto@example.com',  status: '利用中', chatwork_room_id: '202020202' },
+    { user_id: 10008, name: '中村 さくら', category: '通所',       email: 'nakamura@example.com',  status: '利用中', chatwork_room_id: '303030303' },
+    { user_id: 10009, name: '小林 海斗',   category: '通所',       email: 'kobayashi@example.com', status: '利用中', chatwork_room_id: '' },
+    { user_id: 10010, name: '加藤 結衣',   category: '在宅',       email: 'kato@example.com',      status: '利用中', chatwork_room_id: '404040404' },
+    { user_id: 10011, name: '吉田 翔',     category: '通所',       email: 'yoshida@example.com',   status: '停止',   chatwork_room_id: '' },
   ];
 
   function _mock(action, args) {
@@ -86,14 +86,57 @@
       }
       case 'users.invite':
         return Promise.resolve({
-          user: { user_id: 99999, name: args.name, category: args.category, email: args.email, status: '利用中' },
+          user: { user_id: 99999, name: args.name, category: args.category, email: args.email, status: '利用中', chatwork_room_id: '' },
         });
+      case 'users.updateChatworkRoomId': {
+        const u = MOCK_USERS.find(x => x.user_id === Number(args.user_id));
+        if (u) u.chatwork_room_id = String(args.chatwork_room_id || '');
+        return Promise.resolve({ updated: true });
+      }
       case 'shiftRequests.list': {
-        // 利用中10名のうち 8名が5月希望提出済み、2名が未提出（テスト互換）
-        const submittedIds = [10001, 10002, 10004, 10005, 10006, 10007, 10008, 10010];
-        return Promise.resolve(submittedIds.map(uid => ({
-          user_id: uid, date: '2026-05-01', status: '提出済',
-        })));
+        // adjust.html の dummyState と同じシードで per-day データを生成（画面との一貫性）
+        const month = args.month || '2026-05';
+        const [ry, rm] = month.split('-').map(Number);
+        const days = new Date(ry, rm, 0).getDate();
+        const monthSeed = ry * 12 + rm;
+        const closedDays = new Set();
+        for (let d = 1; d <= days; d++) {
+          if (new Date(ry, rm - 1, d).getDay() === 0) closedDays.add(d);
+        }
+        if (ry === 2026 && rm === 5) [3, 4, 5, 6].forEach(d => closedDays.add(d));
+        if (rm === 1) [1, 2, 3, 12].forEach(d => closedDays.add(d));
+
+        const rows = [];
+        MOCK_USERS.filter(u => u.status === '利用中').forEach(u => {
+          for (let d = 1; d <= days; d++) {
+            if (closedDays.has(d)) continue;
+            const seed = (u.user_id * 31 + d * 7 + monthSeed * 13) % 17;
+            if (seed < 4) continue;
+            let status;
+            if (seed < 6)       status = '不承認';
+            else if (seed < 9)  status = '提出済';
+            else                status = '承認';
+            rows.push({
+              request_id: rows.length + 1,
+              user_id:    u.user_id,
+              date:       ry + '-' + String(rm).padStart(2, '0') + '-' + String(d).padStart(2, '0'),
+              status,
+            });
+          }
+        });
+        return Promise.resolve(rows);
+      }
+      case 'shiftConfirmed.create': {
+        const records = (args && args.records) || [];
+        return Promise.resolve({ created: records.length, skipped: 0, notifications_sent: records.length });
+      }
+      case 'exports.spreadsheet': {
+        const ym = (args && args.year_month) || '2026-05';
+        return Promise.resolve({
+          spreadsheet_id: 'mock_ss_' + ym.replace('-', ''),
+          url:            'https://docs.google.com/spreadsheets/d/mock_' + ym.replace('-', '') + '/edit',
+          generated_at:   new Date().toISOString().replace('T', ' ').slice(0, 19),
+        });
       }
       default:
         return Promise.reject(new Error('mock 未対応 action: ' + action));
@@ -109,10 +152,17 @@
     getConfig: () => callGet('config.list'),
 
     // 利用者
-    listUsers: (status) => callGet('users.list', status ? { status } : null),
-    inviteUser: (payload) => callPost('users.invite', payload),
+    listUsers:               (status)                    => callGet('users.list', status ? { status } : null),
+    inviteUser:              (payload)                   => callPost('users.invite', payload),
+    updateChatworkRoomId:    (user_id, chatwork_room_id) => callPost('users.updateChatworkRoomId', { user_id, chatwork_room_id }),
 
     // シフト希望（管理者は全件 or 月単位）
-    listShiftRequests: (params) => callGet('shiftRequests.list', params),
+    listShiftRequests: (params) => callGet('shiftRequests.list', params || {}),
+
+    // シフト確定
+    confirmShifts:     (payload)      => callPost('shiftConfirmed.create', payload),
+
+    // エクスポート
+    exportSpreadsheet: (year_month)   => callPost('exports.spreadsheet', { year_month }),
   };
 })(window);

@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>通知配信履歴 / シフト管理（管理）</title>
   <link rel="stylesheet" href="style.css" />
+  <script src="../../config.js"></script>
+  <script src="api.js"></script>
+  <style>
+    .ch-cell { vertical-align: top; min-width: 90px; }
+    .ch-error { display: block; font-size: 11px; color: var(--danger); margin-top: 3px; word-break: break-all; max-width: 140px; }
+    .action-cell { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+  </style>
 </head>
 <body>
   <div class="app">
@@ -27,7 +34,7 @@
           <li><a href="login.html">ログアウト</a></li>
         </ul>
       </nav>
-      <div class="sidebar-foot">ver 0.2 (mock)</div>
+      <div class="sidebar-foot">ver 0.3</div>
     </aside>
 
     <div class="main">
@@ -40,34 +47,35 @@
 
       <div class="main-content">
         <p class="page-lead">
-          システムから利用者・管理者へ送信された通知（メール）の配信履歴です。
-          メール送信失敗時は再送信できます。
+          システムから利用者へ送信された通知の配信履歴です。
+          <strong>メール</strong>・<strong>ChatWork</strong>・<strong>アプリ内バッジ</strong>の3チャネルを確認できます。
+          失敗行は再送信できます。
         </p>
 
-        <!-- 集計 -->
+        <!-- KPI -->
         <div class="stat-grid">
           <div class="stat success">
-            <p class="stat-label">送信成功（直近7日）</p>
-            <p class="stat-value">42<span class="unit">件</span></p>
+            <p class="stat-label">📧 メール 成功（直近7日）</p>
+            <p class="stat-value" id="kpiMailOk">—<span class="unit">件</span></p>
+          </div>
+          <div class="stat success">
+            <p class="stat-label">💬 ChatWork 送信済</p>
+            <p class="stat-value" id="kpiCwOk">—<span class="unit">件</span></p>
+            <p class="stat-meta" id="kpiCwUnset">未設定: — 件</p>
           </div>
           <div class="stat danger">
-            <p class="stat-label">送信失敗</p>
-            <p class="stat-value">2<span class="unit">件</span></p>
+            <p class="stat-label">失敗（いずれかのチャネル）</p>
+            <p class="stat-value" id="kpiFailed">—<span class="unit">件</span></p>
             <p class="stat-meta">要再送信</p>
           </div>
           <div class="stat">
-            <p class="stat-label">送信スキップ（@local）</p>
-            <p class="stat-value">5<span class="unit">件</span></p>
-            <p class="stat-meta">支援員が口頭伝達</p>
-          </div>
-          <div class="stat">
-            <p class="stat-label">本日の送信枠残</p>
+            <p class="stat-label">📧 本日の送信枠残</p>
             <p class="stat-value">53<span class="unit">/ 100</span></p>
             <p class="stat-meta">GAS MailApp 上限</p>
           </div>
         </div>
 
-        <!-- 検索 -->
+        <!-- フィルター + テーブル -->
         <div class="card">
           <div class="filter-bar">
             <div class="form-group">
@@ -82,9 +90,9 @@
               <label>種別</label>
               <select class="form-select" id="filterType">
                 <option value="">すべて</option>
-                <option value="シフト確定通知">シフト確定通知</option>
-                <option value="空き枠通知">空き枠通知</option>
-                <option value="その他">その他</option>
+                <option>シフト確定通知</option>
+                <option>空き枠通知</option>
+                <option>その他</option>
               </select>
             </div>
             <div class="form-group">
@@ -92,12 +100,14 @@
               <input type="text" class="form-input" id="filterUser" placeholder="名前 or ID">
             </div>
             <div class="form-group">
-              <label>送信状態</label>
+              <label>状態</label>
               <select class="form-select" id="filterStatus">
                 <option value="">すべて</option>
-                <option value="success">成功</option>
-                <option value="failed">失敗</option>
-                <option value="skipped">スキップ</option>
+                <option value="any_failed">いずれか失敗</option>
+                <option value="mail_failed">📧 メール失敗</option>
+                <option value="cw_failed">💬 CW失敗</option>
+                <option value="cw_no_room">💬 CW未設定</option>
+                <option value="all_ok">全チャネル成功</option>
               </select>
             </div>
             <button class="btn btn-secondary" onclick="render()">絞り込み</button>
@@ -112,7 +122,9 @@
                   <th>宛先</th>
                   <th>種別</th>
                   <th>本文（抜粋）</th>
-                  <th>状態</th>
+                  <th class="ch-cell">📧 メール</th>
+                  <th class="ch-cell">💬 ChatWork</th>
+                  <th class="ch-cell">🔔 アプリ</th>
                   <th>操作</th>
                 </tr>
               </thead>
@@ -126,114 +138,207 @@
   </div>
 
   <script>
-    // ダミーデータ — Notifications タブ + メール送信結果（mail_sent_at の有無 / failed フラグ）
+    // ===== モックデータ（3チャネル） =====
     const notifications = [
       { id: 142, ts: '2026-04-27 10:30:12', uid: 10001, name: '田中 太郎', type: 'シフト確定通知',
-        msg: '5月のシフトが確定しました（15日）', status: 'success', email: 'tanaka@example.com' },
+        msg: '5月のシフトが確定しました（15日）',
+        email: 'tanaka@example.com',    mail_status: 'success', mail_error: null,
+        cw_status: 'success', cw_message_id: '100001', cw_error: null, is_read: true },
+
       { id: 141, ts: '2026-04-27 10:30:08', uid: 10002, name: '佐藤 次郎', type: 'シフト確定通知',
-        msg: '5月のシフトが確定しました（17日）', status: 'success', email: 'sato@example.com' },
+        msg: '5月のシフトが確定しました（17日）',
+        email: 'sato@example.com',      mail_status: 'success', mail_error: null,
+        cw_status: 'success', cw_message_id: '100002', cw_error: null, is_read: false },
+
       { id: 140, ts: '2026-04-27 10:30:05', uid: 10006, name: '渡辺 健太', type: 'シフト確定通知',
-        msg: '5月のシフトが確定しました（18日）— @localのため口頭伝達依頼', status: 'skipped', email: 'watanabe_e7@local' },
-      { id: 139, ts: '2026-04-26 17:00:01', uid: 99, name: '管理者 山田', type: 'その他',
-        msg: '出欠未記録 3名: 渡辺 健太, 小林 海斗, 加藤 結衣', status: 'success', email: 'yamada-admin@example.com' },
-      { id: 138, ts: '2026-04-26 09:15:42', uid: 10003, name: '鈴木 三郎', type: '空き枠通知',
-        msg: '4/27 に空きが出ました（先着順）', status: 'failed', email: 'suzuki@example.com', error: 'Mailbox full' },
-      { id: 137, ts: '2026-04-26 09:15:42', uid: 10004, name: '高橋 花子', type: '空き枠通知',
-        msg: '4/27 に空きが出ました（先着順）', status: 'success', email: 'takahashi@example.com' },
-      { id: 136, ts: '2026-04-25 14:20:30', uid: 10010, name: '加藤 結衣', type: 'その他',
-        msg: 'パスワード再設定リンクを送信しました', status: 'success', email: 'kato@example.com' },
-      { id: 135, ts: '2026-04-24 11:45:00', uid: 10009, name: '小林 海斗', type: 'その他',
-        msg: '5月のシフト希望が未提出です（締切 5/17）', status: 'success', email: 'kobayashi@example.com' },
-      { id: 134, ts: '2026-04-24 11:45:00', uid: 10003, name: '鈴木 三郎', type: 'その他',
-        msg: '5月のシフト希望が未提出です（締切 5/17）', status: 'success', email: 'suzuki@example.com' },
-      { id: 133, ts: '2026-04-22 09:00:15', uid: 10011, name: '吉田 翔', type: 'その他',
-        msg: '招待メールを送信しました（仮パスワード発行）', status: 'failed', email: 'yoshida_invalid@example.com', error: 'Address not found' },
-      { id: 132, ts: '2026-04-22 09:00:00', uid: 99, name: '管理者 山田', type: 'その他',
-        msg: '【規定違反】1日制約（30名到達）2026-05-14', status: 'success', email: 'yamada-admin@example.com' },
-      { id: 131, ts: '2026-04-21 16:30:00', uid: 10005, name: '伊藤 美咲', type: 'その他',
-        msg: 'プロフィール変更（カテゴリ: 在宅 → 在宅(関東)）', status: 'skipped', email: 'ito@example.com' },
+        msg: '5月のシフトが確定しました（18日）',
+        email: 'watanabe_e7@local',     mail_status: 'skipped', mail_error: null,
+        cw_status: 'no_room', cw_message_id: null, cw_error: null, is_read: false },
+
+      { id: 139, ts: '2026-04-26 09:15:42', uid: 10003, name: '鈴木 三郎', type: '空き枠通知',
+        msg: '4/27 に空きが出ました',
+        email: 'suzuki@example.com',    mail_status: 'failed',  mail_error: 'Mailbox full',
+        cw_status: 'no_room', cw_message_id: null, cw_error: null, is_read: false },
+
+      { id: 138, ts: '2026-04-26 09:15:40', uid: 10004, name: '高橋 花子', type: '空き枠通知',
+        msg: '4/27 に空きが出ました',
+        email: 'takahashi@example.com', mail_status: 'success', mail_error: null,
+        cw_status: 'failed',  cw_message_id: null, cw_error: 'HTTP 429: Rate limit exceeded', is_read: false },
+
+      { id: 137, ts: '2026-04-25 14:20:30', uid: 10010, name: '加藤 結衣', type: 'その他',
+        msg: 'パスワード再設定リンクを送信しました',
+        email: 'kato@example.com',      mail_status: 'success', mail_error: null,
+        cw_status: 'success', cw_message_id: '100010', cw_error: null, is_read: true },
+
+      { id: 136, ts: '2026-04-24 11:45:00', uid: 10009, name: '小林 海斗', type: 'その他',
+        msg: '5月のシフト希望が未提出です（締切 4/30）',
+        email: 'kobayashi@example.com', mail_status: 'success', mail_error: null,
+        cw_status: 'no_room', cw_message_id: null, cw_error: null, is_read: false },
+
+      { id: 135, ts: '2026-04-24 11:45:00', uid: 10003, name: '鈴木 三郎', type: 'その他',
+        msg: '5月のシフト希望が未提出です（締切 4/30）',
+        email: 'suzuki@example.com',    mail_status: 'success', mail_error: null,
+        cw_status: 'no_room', cw_message_id: null, cw_error: null, is_read: false },
+
+      { id: 134, ts: '2026-04-22 09:00:15', uid: 10011, name: '吉田 翔', type: 'その他',
+        msg: '招待メールを送信しました（仮パスワード発行）',
+        email: 'yoshida_invalid@example.com', mail_status: 'failed', mail_error: 'Address not found',
+        cw_status: 'no_room', cw_message_id: null, cw_error: null, is_read: false },
+
+      { id: 133, ts: '2026-04-22 08:00:00', uid: 10007, name: '山本 直樹', type: 'シフト確定通知',
+        msg: '5月のシフトが確定しました（14日）',
+        email: 'yamamoto@example.com',  mail_status: 'success', mail_error: null,
+        cw_status: 'success', cw_message_id: '100007', cw_error: null, is_read: true },
     ];
 
-    function statusPill(s) {
-      if (s === 'success') return '<span class="pill success">送信成功</span>';
-      if (s === 'failed') return '<span class="pill danger">送信失敗</span>';
-      if (s === 'skipped') return '<span class="pill muted">スキップ</span>';
-      return s;
+    // ===== チャネル pill =====
+    function mailPill(n) {
+      if (n.mail_status === 'success') return '<span class="pill success">送信済</span>';
+      if (n.mail_status === 'failed')  return '<span class="pill danger">失敗</span>' +
+        (n.mail_error ? '<span class="ch-error">' + n.mail_error + '</span>' : '');
+      if (n.mail_status === 'skipped') return '<span class="pill muted">スキップ</span><span class="ch-error">@local</span>';
+      return '—';
+    }
+
+    function cwPill(n) {
+      if (n.cw_status === 'success') return '<span class="pill success">送信済</span>' +
+        (n.cw_message_id ? '<span class="ch-error" style="color:#555;">ID: ' + n.cw_message_id + '</span>' : '');
+      if (n.cw_status === 'failed')  return '<span class="pill danger">失敗</span>' +
+        (n.cw_error ? '<span class="ch-error">' + n.cw_error.slice(0, 40) + '</span>' : '');
+      if (n.cw_status === 'no_room') return '<span class="pill muted">未設定</span>';
+      return '—';
+    }
+
+    function appPill(n) {
+      return n.is_read
+        ? '<span class="pill muted">既読</span>'
+        : '<span class="pill warn">未読</span>';
     }
 
     function typePill(t) {
       if (t === 'シフト確定通知') return '<span class="pill">シフト確定</span>';
-      if (t === '空き枠通知') return '<span class="pill warn">空き枠</span>';
+      if (t === '空き枠通知')     return '<span class="pill warn">空き枠</span>';
       return '<span class="pill muted">その他</span>';
+    }
+
+    function actionCell(n) {
+      const btns = [];
+      if (n.mail_status === 'failed') {
+        btns.push('<button class="btn btn-sm btn-secondary" onclick="resendMail(' + n.id + ')">📧 再送</button>');
+      }
+      if (n.cw_status === 'failed') {
+        btns.push('<button class="btn btn-sm btn-secondary" onclick="resendCW(' + n.id + ')">💬 再送</button>');
+      }
+      return btns.length
+        ? '<div class="action-cell">' + btns.join('') + '</div>'
+        : '<span class="text-xs text-muted">—</span>';
+    }
+
+    // ===== KPI 更新 =====
+    function updateKpi() {
+      const mailOk   = notifications.filter(n => n.mail_status === 'success').length;
+      const cwOk     = notifications.filter(n => n.cw_status   === 'success').length;
+      const cwUnset  = notifications.filter(n => n.cw_status   === 'no_room').length;
+      const anyFailed = notifications.filter(n => n.mail_status === 'failed' || n.cw_status === 'failed').length;
+
+      document.getElementById('kpiMailOk').innerHTML   = mailOk    + '<span class="unit">件</span>';
+      document.getElementById('kpiCwOk').innerHTML     = cwOk      + '<span class="unit">件</span>';
+      document.getElementById('kpiCwUnset').textContent = '未設定: ' + cwUnset + ' 件（Room ID 未登録）';
+      document.getElementById('kpiFailed').innerHTML   = anyFailed + '<span class="unit">件</span>';
+
+      const failedStat = document.getElementById('kpiFailed').closest('.stat');
+      failedStat.className = 'stat ' + (anyFailed > 0 ? 'danger' : 'success');
+    }
+
+    // ===== フィルター =====
+    function matchStatus(n, val) {
+      if (!val) return true;
+      if (val === 'any_failed') return n.mail_status === 'failed' || n.cw_status === 'failed';
+      if (val === 'mail_failed') return n.mail_status === 'failed';
+      if (val === 'cw_failed')   return n.cw_status   === 'failed';
+      if (val === 'cw_no_room')  return n.cw_status   === 'no_room';
+      if (val === 'all_ok')      return n.mail_status !== 'failed' && n.cw_status !== 'failed';
+      return true;
     }
 
     function render() {
       const from = document.getElementById('filterFrom').value;
-      const to = document.getElementById('filterTo').value;
+      const to   = document.getElementById('filterTo').value;
       const type = document.getElementById('filterType').value;
-      const user = document.getElementById('filterUser').value.trim();
+      const user = document.getElementById('filterUser').value.trim().toLowerCase();
       const stat = document.getElementById('filterStatus').value;
 
       const filtered = notifications.filter(n => {
         const date = n.ts.substring(0, 10);
         if (from && date < from) return false;
-        if (to && date > to) return false;
+        if (to   && date > to)   return false;
         if (type && n.type !== type) return false;
-        if (stat && n.status !== stat) return false;
-        if (user) {
-          const q = user.toLowerCase();
-          if (!String(n.uid).includes(user) && !n.name.toLowerCase().includes(q)) return false;
-        }
+        if (!matchStatus(n, stat)) return false;
+        if (user && !String(n.uid).includes(user) && !n.name.toLowerCase().includes(user)) return false;
         return true;
       });
 
       const tbody = document.getElementById('notifTable');
-      tbody.innerHTML = filtered.map(n => `
-        <tr>
-          <td class="text-xs">${n.ts}</td>
-          <td>
-            <strong>${n.name}</strong><br>
-            <span class="text-xs text-muted">#${n.uid} ${n.email}</span>
-          </td>
-          <td>${typePill(n.type)}</td>
-          <td><div class="notif-msg">${n.msg}</div>${n.error ? `<span class="text-xs" style="color: var(--danger);">エラー: ${n.error}</span>` : ''}</td>
-          <td>${statusPill(n.status)}</td>
-          <td class="notif-actions">
-            ${n.status === 'failed'
-              ? `<button class="btn btn-sm btn-secondary" onclick="resend(${n.id})">再送信</button>`
-              : n.status === 'skipped'
-                ? '<span class="text-xs text-muted">—</span>'
-                : `<button class="btn btn-sm btn-secondary" onclick="alert('プレビュー（モック）\\n\\n本文: ${n.msg.replace(/'/g, '')}')">プレビュー</button>`
-            }
-          </td>
-        </tr>
-      `).join('');
+      if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-muted" style="text-align:center;padding:24px;">該当する通知がありません</td></tr>';
+        document.getElementById('rowSummary').textContent = '';
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(n => [
+        '<tr>',
+        '<td class="text-xs" style="white-space:nowrap;">' + n.ts + '</td>',
+        '<td><strong>' + n.name + '</strong><br><span class="text-xs text-muted">#' + n.uid + ' ' + n.email + '</span></td>',
+        '<td>' + typePill(n.type) + '</td>',
+        '<td><div class="notif-msg">' + n.msg + '</div></td>',
+        '<td class="ch-cell">' + mailPill(n) + '</td>',
+        '<td class="ch-cell">' + cwPill(n)   + '</td>',
+        '<td class="ch-cell">' + appPill(n)  + '</td>',
+        '<td>' + actionCell(n) + '</td>',
+        '</tr>',
+      ].join('')).join('');
 
       document.getElementById('rowSummary').textContent =
-        `${filtered.length} 件を表示中（全 ${notifications.length} 件中）`;
+        filtered.length + ' 件を表示中（全 ' + notifications.length + ' 件中）';
     }
 
     function resetFilters() {
-      document.getElementById('filterFrom').value = '';
-      document.getElementById('filterTo').value = '';
-      document.getElementById('filterType').value = '';
-      document.getElementById('filterUser').value = '';
+      document.getElementById('filterFrom').value   = '';
+      document.getElementById('filterTo').value     = '';
+      document.getElementById('filterType').value   = '';
+      document.getElementById('filterUser').value   = '';
       document.getElementById('filterStatus').value = '';
       render();
     }
 
-    function resend(id) {
+    // ===== 再送信 =====
+    function resendMail(id) {
       const n = notifications.find(x => x.id === id);
       if (!n) return;
-      if (confirm(`通知 #${id} を再送信します。\n宛先: ${n.email}\n\nよろしいですか？`)) {
-        n.status = 'success';
-        n.ts = new Date().toLocaleString('ja-JP', { hour12: false }).replace(/\//g, '-');
-        delete n.error;
-        alert('再送信しました（モック）');
-        render();
-      }
+      if (!confirm('通知 #' + id + ' をメールで再送信します。\n宛先: ' + n.email + '\n\nよろしいですか？')) return;
+      n.mail_status = 'success';
+      n.mail_error  = null;
+      n.ts          = new Date().toISOString().replace('T', ' ').slice(0, 19);
+      updateKpi();
+      render();
+      alert('メールを再送信しました（モック）');
     }
 
+    function resendCW(id) {
+      const n = notifications.find(x => x.id === id);
+      if (!n) return;
+      if (!confirm('通知 #' + id + ' を ChatWork で再送信します。\n\nよろしいですか？')) return;
+      n.cw_status     = 'success';
+      n.cw_message_id = String(Math.floor(Math.random() * 999999));
+      n.cw_error      = null;
+      n.ts            = new Date().toISOString().replace('T', ' ').slice(0, 19);
+      updateKpi();
+      render();
+      alert('ChatWork 通知を再送信しました（モック）');
+    }
+
+    // ===== 起動 =====
+    updateKpi();
     render();
   </script>
 </body>

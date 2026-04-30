@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>シフト調整 / シフト管理（管理）</title>
   <link rel="stylesheet" href="style.css" />
+  <script src="../../config.js"></script>
+  <script src="api.js"></script>
 </head>
 <body>
   <div class="app">
@@ -27,7 +29,7 @@
           <li><a href="login.html">ログアウト</a></li>
         </ul>
       </nav>
-      <div class="sidebar-foot">ver 0.2 (mock)</div>
+      <div class="sidebar-foot">ver 0.3</div>
     </aside>
 
     <div class="main">
@@ -39,7 +41,7 @@
             <span class="month-nav-current" id="monthCurrent">—</span>
             <button class="month-nav-btn" data-dir="+1">→</button>
           </div>
-          <button class="btn btn-success" id="confirmOpenBtn">この月のシフトを確定</button>
+          <button class="btn btn-success" id="confirmOpenBtn" disabled>この月のシフトを確定</button>
         </div>
       </header>
 
@@ -79,16 +81,11 @@
 
         <!-- 調整表 -->
         <div class="adjust-wrap" id="adjustWrap">
-          <table class="adjust-table" id="adjustTable">
-            <thead><tr id="thead-row"></tr></thead>
-            <tbody id="tbody"></tbody>
-            <tfoot><tr id="tfoot-row"></tr></tfoot>
-          </table>
+          <p class="text-muted" style="padding: 32px; text-align: center;">読み込み中…</p>
         </div>
 
         <p class="text-xs text-muted mt-3">
-          ※ モック表示。横スクロール対応、利用者列・日付ヘッダ・合計列は固定スティッキー。
-          月切替は URLハッシュ <code>#month=YYYY-MM</code> で保持されます。
+          ※ 横スクロール対応。月切替は URLハッシュ <code>#month=YYYY-MM</code> で保持されます。
         </p>
       </div>
     </div>
@@ -96,7 +93,7 @@
 
   <!-- 確定モーダル -->
   <div class="modal-overlay" id="confirmModal">
-    <div class="modal modal-lg">
+    <div class="modal modal-lg" id="modalInner">
       <h2 id="confirmTitle">シフトを確定</h2>
       <p id="confirmLead">確定対象の件数と規定違反の状況を確認してください。</p>
 
@@ -123,120 +120,147 @@
       </label>
 
       <div class="modal-actions">
-        <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
+        <button class="btn btn-secondary" id="modalCancelBtn">キャンセル</button>
         <button class="btn btn-success" id="confirmSubmitBtn" disabled>確定する</button>
       </div>
     </div>
   </div>
 
   <script>
-    // ========== 状態 ==========
-    const CAPACITY = 20;
-    const DAILY_LIMIT = 30;       // 1日制約（hard）
-    const DAILY_SOFT = 28;        // 1日警告（soft）— 28〜29名
-    const MONTHLY_HARD = 1.25;    // 単月125%超でNG
-    const MONTHLY_SOFT = 1.20;    // 単月120%超で警告
-    const MONTHLY_OFF_DAYS = 8;   // 利用者上限算出用
+    // ========== 定数 ==========
+    const CAPACITY         = 20;
+    const DAILY_LIMIT      = 30;
+    const DAILY_SOFT       = 28;
+    const MONTHLY_HARD     = 1.25;
+    const MONTHLY_SOFT     = 1.20;
+    const MONTHLY_OFF_DAYS = 8;
 
-    let target = getMonthFromHash();
+    // ========== 状態 ==========
+    let target      = getMonthFromHash();
+    let tableUsers  = [];           // API から取得した利用者一覧
+    let cellStates  = new Map();    // 'uid_day' → state
 
     function getMonthFromHash() {
       const m = location.hash.match(/month=(\d{4})-(\d{2})/);
-      if (m) return { y: +m[1], m: +m[2] };
-      return { y: 2026, m: 5 };
+      return m ? { y: +m[1], m: +m[2] } : { y: 2026, m: 5 };
     }
-
     function setMonthHash(y, m) {
-      location.hash = `month=${y}-${String(m).padStart(2, '0')}`;
+      location.hash = 'month=' + y + '-' + String(m).padStart(2, '0');
     }
-
     function daysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
 
-    // 閉所日: 日曜 + 月別ダミー祝日
     function buildClosed(y, m) {
       const closed = new Set();
       const days = daysInMonth(y, m);
       for (let d = 1; d <= days; d++) {
         if (new Date(y, m - 1, d).getDay() === 0) closed.add(d);
       }
-      // ダミー祝日（5月のみGW）
       if (y === 2026 && m === 5) [3, 4, 5, 6].forEach(d => closed.add(d));
-      // 元日・成人の日（1月）
-      if (m === 1) [1, 2, 3, 12].forEach(d => closed.add(d));
+      if (m === 1)               [1, 2, 3, 12].forEach(d => closed.add(d));
       return closed;
     }
 
-    const users = [
-      { id: 10001, name: '田中 太郎', cat: '通所' },
-      { id: 10002, name: '佐藤 次郎', cat: '通所' },
-      { id: 10003, name: '鈴木 三郎', cat: '在宅' },
-      { id: 10004, name: '高橋 花子', cat: '通所' },
-      { id: 10005, name: '伊藤 美咲', cat: '在宅(関東)' },
-      { id: 10006, name: '渡辺 健太', cat: '通所' },
-      { id: 10007, name: '山本 直樹', cat: '在宅通所' },
-      { id: 10008, name: '中村 さくら', cat: '通所' },
-      { id: 10009, name: '小林 海斗', cat: '通所' },
-      { id: 10010, name: '加藤 結衣', cat: '在宅' },
-    ];
+    // ========== データ取得 ==========
+    async function loadData() {
+      document.getElementById('confirmOpenBtn').disabled = true;
+      document.getElementById('adjustWrap').innerHTML =
+        '<p class="text-muted" style="padding:32px;text-align:center;">読み込み中…</p>';
 
-    // 月別シードでダミー状態を生成（再現性）
-    function dummyState(uid, day, monthSeed) {
-      const seed = (uid * 31 + day * 7 + monthSeed * 13) % 17;
-      if (seed < 4) return 'empty';
-      if (seed < 6) return 'rejected';
-      if (seed < 9) return 'requested';
-      if (seed === 16) return 'external';
-      return 'approved';
+      const month = target.y + '-' + String(target.m).padStart(2, '0');
+      try {
+        const [users, requests] = await Promise.all([
+          ShiftAdminAPI.listUsers('利用中'),
+          ShiftAdminAPI.listShiftRequests({ month }),
+        ]);
+
+        tableUsers = users;
+
+        // ShiftRequests → cellStates
+        cellStates = new Map();
+        requests.forEach(r => {
+          const day = Number(String(r.date).split('-')[2]);
+          if (!day) return;
+          let state;
+          if      (r.status === '提出済')  state = 'requested';
+          else if (r.status === '承認')    state = 'approved';
+          else if (r.status === '不承認')  state = 'rejected';
+          else return;
+          cellStates.set(r.user_id + '_' + day, state);
+        });
+
+        buildTable();
+        document.getElementById('confirmOpenBtn').disabled = false;
+      } catch (e) {
+        console.error(e);
+        document.getElementById('adjustWrap').innerHTML =
+          '<p class="text-danger" style="padding:32px;text-align:center;">データの読み込みに失敗しました: ' + e.message + '</p>';
+      }
     }
 
-    // ========== 描画 ==========
-    function render() {
+    // ========== テーブル構築 ==========
+    function buildTable() {
       const { y, m } = target;
-      const days = daysInMonth(y, m);
+      const days   = daysInMonth(y, m);
       const closed = buildClosed(y, m);
-      const monthSeed = y * 12 + m;
 
-      document.getElementById('monthCurrent').textContent = `${y}年${m}月`;
-      document.getElementById('confirmOpenBtn').textContent = `この月（${m}月）を確定`;
+      document.getElementById('monthCurrent').textContent = y + '年' + m + '月';
+      document.getElementById('confirmOpenBtn').textContent = 'この月（' + m + '月）を確定';
+
+      const wrap = document.getElementById('adjustWrap');
+      wrap.innerHTML = '';
+      const table = document.createElement('table');
+      table.className = 'adjust-table';
+      table.id = 'adjustTable';
 
       // ヘッダー
-      const thead = document.getElementById('thead-row');
-      thead.innerHTML = '<th class="user-col">利用者</th>' +
+      const dowNames = ['日', '月', '火', '水', '木', '金', '土'];
+      const thead = document.createElement('thead');
+      thead.innerHTML = '<tr id="thead-row"><th class="user-col">利用者</th>' +
         Array.from({ length: days }, (_, i) => {
-          const d = i + 1;
+          const d   = i + 1;
           const dow = new Date(y, m - 1, d).getDay();
-          const dowName = ['日', '月', '火', '水', '木', '金', '土'][dow];
           const cls = closed.has(d) ? 'closed' : (dow === 0 ? 'sun' : (dow === 6 ? 'sat' : ''));
-          return `<th class="day-col ${cls}">${d}<span class="dow">${dowName}</span></th>`;
+          return '<th class="day-col ' + cls + '">' + d + '<span class="dow">' + dowNames[dow] + '</span></th>';
         }).join('') +
-        '<th class="day-col total-col">合計</th>';
+        '<th class="day-col total-col">合計</th></tr>';
+      table.appendChild(thead);
 
       // ボディ
-      const tbody = document.getElementById('tbody');
-      tbody.innerHTML = '';
-      users.forEach(u => {
+      const tbody = document.createElement('tbody');
+      tbody.id = 'tbody';
+      tableUsers.forEach(u => {
         const tr = document.createElement('tr');
-        const tds = [`<td class="user-col">${u.name}<br><span class="text-xs text-muted">#${u.id} ${u.cat}</span></td>`];
+        const cells = ['<td class="user-col">' + u.name + '<br><span class="text-xs text-muted">#' + u.user_id + ' ' + u.category + '</span></td>'];
         let approvedDays = 0;
         for (let d = 1; d <= days; d++) {
-          let s = closed.has(d) ? 'closed' : dummyState(u.id, d, monthSeed);
-          if (s === 'approved' || s === 'external') approvedDays++;
-          tds.push(`<td><div class="adjust-cell ${s}" data-uid="${u.id}" data-day="${d}"></div></td>`);
+          const state = closed.has(d) ? 'closed' : (cellStates.get(u.user_id + '_' + d) || 'empty');
+          if (state === 'approved' || state === 'external') approvedDays++;
+          cells.push('<td><div class="adjust-cell ' + state + '" data-uid="' + u.user_id + '" data-day="' + d + '"></div></td>');
         }
-        tds.push(`<td class="total-col">${approvedDays}</td>`);
-        tr.innerHTML = tds.join('');
+        cells.push('<td class="total-col" id="total-' + u.user_id + '">' + approvedDays + '</td>');
+        tr.innerHTML = cells.join('');
         tbody.appendChild(tr);
       });
+      table.appendChild(tbody);
+
+      // フッター
+      const tfoot = document.createElement('tfoot');
+      tfoot.innerHTML = '<tr id="tfoot-row"><td class="user-col">当日合計</td>' +
+        Array.from({ length: days }, (_, i) => '<td id="dc-' + (i + 1) + '"></td>').join('') +
+        '<td class="total-col" id="grand-total"></td></tr>';
+      table.appendChild(tfoot);
+      wrap.appendChild(table);
 
       // セル切替
       const cycle = ['empty', 'requested', 'approved', 'rejected', 'external'];
-      document.querySelectorAll('.adjust-cell').forEach(cell => {
+      table.querySelectorAll('.adjust-cell').forEach(cell => {
         if (cell.classList.contains('closed')) return;
         cell.addEventListener('click', () => {
-          const cur = cycle.find(s => cell.classList.contains(s)) || 'empty';
+          const cur  = cycle.find(s => cell.classList.contains(s)) || 'empty';
           const next = cycle[(cycle.indexOf(cur) + 1) % cycle.length];
           cycle.forEach(s => cell.classList.remove(s));
           cell.classList.add(next);
+          cellStates.set(cell.dataset.uid + '_' + cell.dataset.day, next);
           recalc();
         });
       });
@@ -244,84 +268,91 @@
       recalc();
     }
 
+    // ========== 集計 ==========
     function recalc() {
       const { y, m } = target;
-      const days = daysInMonth(y, m);
+      const days   = daysInMonth(y, m);
       const closed = buildClosed(y, m);
       const openDays = days - closed.size;
 
-      // 1日ごとの承認カウント（施設外除外、approvedのみ）
       const dayCounts = Array(days + 1).fill(0);
-      let totalApprovedDomain = 0;  // 分母に入る件数（approved、施設外除く）
-      let totalExternal = 0;
-      document.querySelectorAll('.adjust-cell.approved').forEach(c => {
-        const d = +c.dataset.day; dayCounts[d]++; totalApprovedDomain++;
-      });
-      document.querySelectorAll('.adjust-cell.external').forEach(c => totalExternal++);
-      let pending = document.querySelectorAll('.adjust-cell.requested').length;
+      let totalApproved = 0;
+      let pending = 0;
 
-      // フッター描画
-      const tfoot = document.getElementById('tfoot-row');
-      let html = '<td class="user-col">当日合計</td>';
+      document.querySelectorAll('.adjust-cell.approved').forEach(c => {
+        dayCounts[+c.dataset.day]++;
+        totalApproved++;
+      });
+      document.querySelectorAll('.adjust-cell.requested').forEach(() => pending++);
+
+      // 合計列（利用者行）
+      tableUsers.forEach(u => {
+        const cell = document.getElementById('total-' + u.user_id);
+        if (!cell) return;
+        let cnt = 0;
+        document.querySelectorAll('.adjust-cell.approved[data-uid="' + u.user_id + '"], .adjust-cell.external[data-uid="' + u.user_id + '"]')
+          .forEach(() => cnt++);
+        cell.textContent = cnt;
+      });
+
+      // フッター
       for (let d = 1; d <= days; d++) {
-        if (closed.has(d)) { html += `<td>—</td>`; continue; }
+        const el = document.getElementById('dc-' + d);
+        if (!el) continue;
+        if (closed.has(d)) { el.textContent = '—'; el.className = ''; continue; }
         const n = dayCounts[d];
-        let cls = '';
-        if (n >= DAILY_LIMIT) cls = 'over';
-        else if (n >= DAILY_SOFT) cls = 'warn';
-        html += `<td class="${cls}">${n}</td>`;
+        el.textContent = n || '';
+        el.className = n >= DAILY_LIMIT ? 'over' : (n >= DAILY_SOFT ? 'warn' : '');
       }
-      html += `<td class="total-col">${totalApprovedDomain}</td>`;
-      tfoot.innerHTML = html;
+      const grandTotal = document.getElementById('grand-total');
+      if (grandTotal) grandTotal.textContent = totalApproved;
 
       // 単月利用率
       const monthlyMax = openDays * CAPACITY;
-      const rate = monthlyMax === 0 ? 0 : totalApprovedDomain / monthlyMax;
+      const rate = monthlyMax === 0 ? 0 : totalApproved / monthlyMax;
       document.getElementById('monthlyRateVal').textContent = (rate * 100).toFixed(1) + '%';
-      document.getElementById('totalPersonDays').textContent = totalApprovedDomain;
-      document.getElementById('totalPersonDaysUnit').textContent = `/ ${monthlyMax}`;
+      document.getElementById('totalPersonDays').textContent = totalApproved;
+      document.getElementById('totalPersonDaysUnit').textContent = '/ ' + monthlyMax;
       document.getElementById('pendingRequests').textContent = pending;
 
       const stat = document.getElementById('monthlyRateStat');
-      const bar = document.getElementById('monthlyRateBar');
+      const bar  = document.getElementById('monthlyRateBar');
       const meta = document.getElementById('monthlyRateMeta');
       stat.classList.remove('warn', 'danger');
       bar.classList.remove('warn', 'danger');
       bar.style.width = Math.min(rate / MONTHLY_HARD * 100, 100) + '%';
       if (rate > MONTHLY_HARD) {
         stat.classList.add('danger'); bar.classList.add('danger');
-        meta.textContent = `規定違反: ${(MONTHLY_HARD * 100)}% 超`;
+        meta.textContent = '規定違反: ' + (MONTHLY_HARD * 100) + '% 超';
       } else if (rate > MONTHLY_SOFT) {
         stat.classList.add('warn'); bar.classList.add('warn');
-        meta.textContent = `要注意: ${(MONTHLY_SOFT * 100)}% 超（${(MONTHLY_HARD * 100)}% 到達でブロック）`;
+        meta.textContent = '要注意: ' + (MONTHLY_SOFT * 100) + '% 超（' + (MONTHLY_HARD * 100) + '% 到達でブロック）';
       } else {
         meta.textContent = '基準内';
       }
 
-      // グローバルアラート（最も近い違反 / 警告）
-      const globalAlert = document.getElementById('globalAlert');
-      const dailyOver = [];
-      const dailyWarn = [];
+      // グローバルアラート
+      const dailyOver = [], dailyWarn = [];
       for (let d = 1; d <= days; d++) {
         if (closed.has(d)) continue;
         if (dayCounts[d] >= DAILY_LIMIT) dailyOver.push({ d, n: dayCounts[d] });
         else if (dayCounts[d] >= DAILY_SOFT) dailyWarn.push({ d, n: dayCounts[d] });
       }
-
+      const globalAlert = document.getElementById('globalAlert');
       if (rate > MONTHLY_HARD || dailyOver.length > 0) {
         globalAlert.style.display = '';
         globalAlert.className = 'alert danger';
         const parts = [];
-        if (rate > MONTHLY_HARD) parts.push(`単月利用率 ${(rate * 100).toFixed(1)}% > ${(MONTHLY_HARD * 100)}%`);
-        if (dailyOver.length > 0) parts.push(`1日30名到達: ${dailyOver.map(x => `${m}/${x.d}`).join(', ')}`);
-        globalAlert.innerHTML = `<strong>✗ 規定違反:</strong> <span>${parts.join(' / ')}</span>`;
+        if (rate > MONTHLY_HARD) parts.push('単月利用率 ' + (rate * 100).toFixed(1) + '% > ' + (MONTHLY_HARD * 100) + '%');
+        if (dailyOver.length > 0) parts.push('1日30名到達: ' + dailyOver.map(x => m + '/' + x.d).join(', '));
+        globalAlert.innerHTML = '<strong>✗ 規定違反:</strong> <span>' + parts.join(' / ') + '</span>';
       } else if (rate > MONTHLY_SOFT || dailyWarn.length > 0) {
         globalAlert.style.display = '';
         globalAlert.className = 'alert warn';
         const parts = [];
-        if (rate > MONTHLY_SOFT) parts.push(`単月利用率 ${(rate * 100).toFixed(1)}%（120%超で警告）`);
-        if (dailyWarn.length > 0) parts.push(`1日28名以上: ${dailyWarn.map(x => `${m}/${x.d}`).join(', ')}`);
-        globalAlert.innerHTML = `<strong>⚠ 警告:</strong> <span>${parts.join(' / ')}</span>`;
+        if (rate > MONTHLY_SOFT) parts.push('単月利用率 ' + (rate * 100).toFixed(1) + '%（120%超で警告）');
+        if (dailyWarn.length > 0) parts.push('1日28名以上: ' + dailyWarn.map(x => m + '/' + x.d).join(', '));
+        globalAlert.innerHTML = '<strong>⚠ 警告:</strong> <span>' + parts.join(' / ') + '</span>';
       } else {
         globalAlert.style.display = 'none';
       }
@@ -336,67 +367,54 @@
         setMonthHash(y, m);
       });
     });
-
     window.addEventListener('hashchange', () => {
       target = getMonthFromHash();
-      render();
+      loadData();
     });
 
     // ========== 確定モーダル ==========
     function detectViolations() {
       const { y, m } = target;
-      const days = daysInMonth(y, m);
-      const closed = buildClosed(y, m);
+      const days    = daysInMonth(y, m);
+      const closed  = buildClosed(y, m);
       const openDays = days - closed.size;
+      const hard = [], soft = [];
 
-      const hard = [];
-      const soft = [];
-
-      // 1日ごとの集計（施設外除外）
-      const dayCounts = Array(days + 1).fill(0);
-      let totalDomain = 0;
-      const userDayCount = {};
-      users.forEach(u => userDayCount[u.id] = 0);
+      const dayCounts  = Array(days + 1).fill(0);
+      let totalDomain  = 0;
+      const userDays   = {};
+      tableUsers.forEach(u => userDays[u.user_id] = 0);
 
       document.querySelectorAll('.adjust-cell.approved').forEach(c => {
-        const d = +c.dataset.day;
-        const uid = +c.dataset.uid;
-        dayCounts[d]++;
+        dayCounts[+c.dataset.day]++;
         totalDomain++;
-        userDayCount[uid] = (userDayCount[uid] || 0) + 1;
+        userDays[+c.dataset.uid] = (userDays[+c.dataset.uid] || 0) + 1;
       });
-      // external も利用者の日数カウントには入る（規定 §1.3 4: 利用者上限は施設外含む？ → 設計書では「利用者ごとの月内利用上限」、施設外除外は分母話。利用者の日数は確定全部）
       document.querySelectorAll('.adjust-cell.external').forEach(c => {
-        const uid = +c.dataset.uid;
-        userDayCount[uid] = (userDayCount[uid] || 0) + 1;
+        userDays[+c.dataset.uid] = (userDays[+c.dataset.uid] || 0) + 1;
       });
 
-      // 1日制約
       for (let d = 1; d <= days; d++) {
         if (closed.has(d)) continue;
         const n = dayCounts[d];
-        if (n >= DAILY_LIMIT) {
-          hard.push({ kind: 'daily', label: `1日制約: ${m}/${d} で <code>${n}名</code>（上限 ${DAILY_LIMIT - 1}名まで）` });
-        } else if (n >= DAILY_SOFT) {
-          soft.push({ kind: 'daily-soft', label: `1日警告: ${m}/${d} で <code>${n}名</code>（${DAILY_SOFT}〜${DAILY_LIMIT - 1}名は警告水準）` });
-        }
+        if (n >= DAILY_LIMIT)
+          hard.push({ label: '1日制約: ' + m + '/' + d + ' で <code>' + n + '名</code>（上限 ' + (DAILY_LIMIT - 1) + '名まで）' });
+        else if (n >= DAILY_SOFT)
+          soft.push({ label: '1日警告: ' + m + '/' + d + ' で <code>' + n + '名</code>（' + DAILY_SOFT + '〜' + (DAILY_LIMIT - 1) + '名は警告水準）' });
       }
 
-      // 月間制約（単月）
       const monthlyMax = openDays * CAPACITY;
       const rate = monthlyMax === 0 ? 0 : totalDomain / monthlyMax;
-      if (rate > MONTHLY_HARD) {
-        hard.push({ kind: 'monthly', label: `月間制約: 単月利用率 <code>${(rate * 100).toFixed(1)}%</code> > ${(MONTHLY_HARD * 100)}%（${totalDomain} / ${monthlyMax}）` });
-      } else if (rate > MONTHLY_SOFT) {
-        soft.push({ kind: 'monthly-soft', label: `月間警告: 単月利用率 <code>${(rate * 100).toFixed(1)}%</code>（${(MONTHLY_HARD * 100)}% 到達でブロック）` });
-      }
+      if (rate > MONTHLY_HARD)
+        hard.push({ label: '月間制約: 単月利用率 <code>' + (rate * 100).toFixed(1) + '%</code> > ' + (MONTHLY_HARD * 100) + '%（' + totalDomain + ' / ' + monthlyMax + '）' });
+      else if (rate > MONTHLY_SOFT)
+        soft.push({ label: '月間警告: 単月利用率 <code>' + (rate * 100).toFixed(1) + '%</code>（' + (MONTHLY_HARD * 100) + '% 到達でブロック）' });
 
-      // 利用者月内上限（境界仕様: 上限ちょうどはOK、超過でNG）
       const userLimit = days - MONTHLY_OFF_DAYS;
-      Object.entries(userDayCount).forEach(([uid, count]) => {
+      Object.entries(userDays).forEach(([uid, count]) => {
         if (count > userLimit) {
-          const u = users.find(x => x.id === Number(uid));
-          hard.push({ kind: 'user', label: `利用者上限: ${u ? u.name : `#${uid}`} <code>${count}日</code> > 上限 ${userLimit}日（${days}日 - 8日）` });
+          const u = tableUsers.find(x => x.user_id === Number(uid));
+          hard.push({ label: '利用者上限: ' + (u ? u.name : '#' + uid) + ' <code>' + count + '日</code> > 上限 ' + userLimit + '日（' + days + '日 - 8日）' });
         }
       });
 
@@ -404,54 +422,47 @@
     }
 
     function openModal() {
+      // モーダルを確定確認ビューに戻す（連続操作対応）
+      resetModalToConfirm();
       const { hard, soft, totalDomain } = detectViolations();
+
       document.getElementById('modalApprovedCount').textContent = totalDomain + '件';
-      document.getElementById('modalHardCount').textContent = hard.length + '件';
-      document.getElementById('modalSoftCount').textContent = soft.length + '件';
+      document.getElementById('modalHardCount').textContent     = hard.length + '件';
+      document.getElementById('modalSoftCount').textContent     = soft.length + '件';
+      document.getElementById('modalHardStat').classList.toggle('danger', hard.length > 0);
+      document.getElementById('modalSoftStat').classList.toggle('warn',   soft.length > 0);
 
-      const hardStat = document.getElementById('modalHardStat');
-      const softStat = document.getElementById('modalSoftStat');
-      hardStat.classList.toggle('danger', hard.length > 0);
-      softStat.classList.toggle('warn', soft.length > 0);
-
-      const sections = document.getElementById('violationSections');
       let html = '';
       if (hard.length > 0) {
-        html += `<div class="violation-section hard">
-          <p class="violation-section-title">✗ ハードブロック（${hard.length}件）— 確定できません</p>
-          <ul class="violation-list">${hard.map(v => `<li>${v.label}</li>`).join('')}</ul>
-        </div>`;
+        html += '<div class="violation-section hard"><p class="violation-section-title">✗ ハードブロック（' + hard.length + '件）— 確定できません</p>' +
+          '<ul class="violation-list">' + hard.map(v => '<li>' + v.label + '</li>').join('') + '</ul></div>';
       }
       if (soft.length > 0) {
-        html += `<div class="violation-section soft">
-          <p class="violation-section-title">⚠ ソフトアラート（${soft.length}件）— 承知の上で進めます</p>
-          <ul class="violation-list">${soft.map(v => `<li>${v.label}</li>`).join('')}</ul>
-        </div>`;
+        html += '<div class="violation-section soft"><p class="violation-section-title">⚠ ソフトアラート（' + soft.length + '件）— 承知の上で進めます</p>' +
+          '<ul class="violation-list">' + soft.map(v => '<li>' + v.label + '</li>').join('') + '</ul></div>';
       }
       if (hard.length === 0 && soft.length === 0) {
-        html += `<div class="violation-section clean">
-          <p class="violation-section-title">✓ 規定違反なし — そのまま確定できます</p>
-        </div>`;
+        html += '<div class="violation-section clean"><p class="violation-section-title">✓ 規定違反なし — そのまま確定できます</p></div>';
       }
-      sections.innerHTML = html;
+      document.getElementById('violationSections').innerHTML = html;
 
       const softCheck = document.getElementById('softConfirmCheck');
-      const softAck = document.getElementById('softAck');
+      const softAck   = document.getElementById('softAck');
       const submitBtn = document.getElementById('confirmSubmitBtn');
       softAck.checked = false;
 
       if (hard.length > 0) {
-        softCheck.style.display = 'none';
-        submitBtn.disabled = true;
-        submitBtn.textContent = '確定できません（規定違反）';
+        softCheck.style.display  = 'none';
+        submitBtn.disabled       = true;
+        submitBtn.textContent    = '確定できません（規定違反）';
       } else if (soft.length > 0) {
-        softCheck.style.display = '';
-        submitBtn.disabled = true;
-        submitBtn.textContent = '上記を承知の上で確定する';
+        softCheck.style.display  = '';
+        submitBtn.disabled       = true;
+        submitBtn.textContent    = '上記を承知の上で確定する';
       } else {
-        softCheck.style.display = 'none';
-        submitBtn.disabled = false;
-        submitBtn.textContent = '確定する';
+        softCheck.style.display  = 'none';
+        submitBtn.disabled       = false;
+        submitBtn.textContent    = '確定する';
       }
 
       document.getElementById('confirmModal').classList.add('is-open');
@@ -461,20 +472,100 @@
       document.getElementById('confirmModal').classList.remove('is-open');
     }
 
+    function resetModalToConfirm() {
+      document.getElementById('modalInner').innerHTML = `
+        <h2 id="confirmTitle">シフトを確定</h2>
+        <p id="confirmLead">確定対象の件数と規定違反の状況を確認してください。</p>
+        <div class="modal-stats">
+          <div class="modal-stat"><p class="modal-stat-label">確定対象</p><p class="modal-stat-value" id="modalApprovedCount">—</p></div>
+          <div class="modal-stat" id="modalHardStat"><p class="modal-stat-label">違反（ブロック）</p><p class="modal-stat-value" id="modalHardCount">—</p></div>
+          <div class="modal-stat" id="modalSoftStat"><p class="modal-stat-label">警告（要確認）</p><p class="modal-stat-value" id="modalSoftCount">—</p></div>
+        </div>
+        <div id="violationSections"></div>
+        <label class="confirm-check" id="softConfirmCheck" style="display:none;">
+          <input type="checkbox" id="softAck">
+          <span>警告内容を承知の上で確定します（管理責任で進める旨に同意）</span>
+        </label>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" id="modalCancelBtn">キャンセル</button>
+          <button class="btn btn-success" id="confirmSubmitBtn" disabled>確定する</button>
+        </div>
+      `;
+      document.getElementById('modalCancelBtn').addEventListener('click', closeModal);
+      document.getElementById('softAck').addEventListener('change', e => {
+        document.getElementById('confirmSubmitBtn').disabled = !e.target.checked;
+      });
+      document.getElementById('confirmSubmitBtn').addEventListener('click', doConfirmSubmit);
+    }
+
+    async function doConfirmSubmit() {
+      const btn = document.getElementById('confirmSubmitBtn');
+      btn.disabled   = true;
+      btn.textContent = '確定中…';
+
+      const { y, m } = target;
+      const yearMonth = y + '-' + String(m).padStart(2, '0');
+
+      // 確定対象レコード収集
+      const records = [];
+      document.querySelectorAll('.adjust-cell.approved, .adjust-cell.external').forEach(cell => {
+        const day = +cell.dataset.day;
+        records.push({
+          user_id:              +cell.dataset.uid,
+          date:                 yearMonth + '-' + String(day).padStart(2, '0'),
+          is_facility_external: cell.classList.contains('external'),
+        });
+      });
+
+      try {
+        const result = await ShiftAdminAPI.confirmShifts({ year_month: yearMonth, records });
+        showSuccessState(result, yearMonth);
+      } catch (e) {
+        alert('確定に失敗しました: ' + e.message);
+        btn.disabled    = false;
+        btn.textContent = '確定する';
+      }
+    }
+
+    function showSuccessState(result, yearMonth) {
+      const [y, m] = yearMonth.split('-').map(Number);
+      document.getElementById('modalInner').innerHTML = `
+        <div style="text-align:center; padding: 8px 0 8px;">
+          <div style="font-size:52px; margin-bottom:12px;">✅</div>
+          <h2 style="margin-bottom:8px;">${y}年${m}月のシフトを確定しました</h2>
+          <p class="text-muted" style="margin-bottom:28px;">${result.created}件を登録。利用者へ通知を配信しました。</p>
+          <button class="btn btn-primary" id="exportBtn" style="width:100%;margin-bottom:12px;font-size:15px;">
+            📊 確定スプレッドシートを生成する
+          </button>
+          <button class="btn btn-secondary" id="successCloseBtn" style="width:100%;">閉じる</button>
+        </div>
+      `;
+      document.getElementById('successCloseBtn').addEventListener('click', closeModal);
+      document.getElementById('exportBtn').addEventListener('click', async () => {
+        const exportBtn = document.getElementById('exportBtn');
+        exportBtn.disabled   = true;
+        exportBtn.textContent = '生成中…';
+        try {
+          const res = await ShiftAdminAPI.exportSpreadsheet(yearMonth);
+          window.open(res.url, '_blank');
+          exportBtn.textContent = '✓ スプレッドシートを開きました';
+        } catch (e) {
+          alert('エクスポートに失敗しました: ' + e.message);
+          exportBtn.disabled   = false;
+          exportBtn.textContent = '📊 確定スプレッドシートを生成する';
+        }
+      });
+    }
+
+    // ========== イベント ==========
     document.getElementById('confirmOpenBtn').addEventListener('click', openModal);
-    document.getElementById('confirmModal').addEventListener('click', (e) => {
+    document.getElementById('confirmModal').addEventListener('click', e => {
       if (e.target.id === 'confirmModal') closeModal();
     });
-    document.getElementById('softAck').addEventListener('change', (e) => {
-      document.getElementById('confirmSubmitBtn').disabled = !e.target.checked;
-    });
-    document.getElementById('confirmSubmitBtn').addEventListener('click', () => {
-      alert(`${target.y}年${target.m}月のシフトを確定しました（モック）\n\nAPI想定:\nPOST shiftConfirmed.create\npayload: { records: [...] }`);
-      closeModal();
-    });
+    document.getElementById('modalCancelBtn').addEventListener('click', closeModal);
 
     // ========== 起動 ==========
-    render();
+    loadData();
   </script>
 </body>
 </html>

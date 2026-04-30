@@ -102,6 +102,16 @@
 
   // ===== モックモード =====
 
+  function _mockNow() {
+    const d = new Date();
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+
+  function _mockDate() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
   function _mock(action, args) {
     console.info('[ShiftAPI mock]', action, args);
     args = args || {};
@@ -137,6 +147,39 @@
       }
       case 'shiftRequests.create':
         return Promise.resolve({ created: args.dates || [], skipped: [] });
+      case 'attendances.clockIn': {
+        const date = (args && args.date) || _mockDate();
+        const rec = { attendance_id: 9001, user_id: 10001, date, status: '未確定', clock_in: _mockNow(), clock_out: '', source: 'self_clock' };
+        try { sessionStorage.setItem('_mock_att_' + date, JSON.stringify(rec)); } catch (e) {}
+        return Promise.resolve(rec);
+      }
+      case 'attendances.clockOut': {
+        const date = (args && args.date) || _mockDate();
+        const stored = sessionStorage.getItem('_mock_att_' + date);
+        const rec = stored ? JSON.parse(stored) : { attendance_id: 9001, user_id: 10001, date, status: '未確定', clock_in: '09:00', clock_out: '' };
+        rec.status = '出勤';
+        rec.clock_out = _mockNow();
+        try { sessionStorage.setItem('_mock_att_' + date, JSON.stringify(rec)); } catch (e) {}
+        return Promise.resolve(rec);
+      }
+      case 'attendances.list': {
+        const date = args && args.date;
+        if (date) {
+          const stored = sessionStorage.getItem('_mock_att_' + date);
+          return Promise.resolve(stored ? [JSON.parse(stored)] : []);
+        }
+        return Promise.resolve([]);
+      }
+      case 'notifications.list':
+        return Promise.resolve([
+          { notification_id: 1, type: 'シフト確定通知', target_date: '2026-05-01', message: '', is_read: 'FALSE', created_at: '2026-04-25 10:00:00' },
+          { notification_id: 2, type: '空き枠通知',     target_date: '2026-04-30', message: '', is_read: 'FALSE', created_at: '2026-04-26 14:30:00' },
+          { notification_id: 3, type: 'シフト確定通知', target_date: '2026-04-01', message: '', is_read: 'TRUE',  created_at: '2026-03-25 09:00:00' },
+        ]);
+      case 'notifications.unreadCount':
+        return Promise.resolve({ count: 2 });
+      case 'notifications.markRead':
+        return Promise.resolve({ updated: true });
       default:
         return Promise.reject(new Error('mock 未対応 action: ' + action));
     }
@@ -194,6 +237,37 @@
     async submitShiftRequests(dates) {
       const s = requireSession();
       return callPost('shiftRequests.create', { user_id: s.user_id, dates });
+    },
+
+    // 打刻
+    async clockIn(date) {
+      const s = requireSession();
+      return callPost('attendances.clockIn', { user_id: s.user_id, date });
+    },
+    async clockOut(date) {
+      const s = requireSession();
+      return callPost('attendances.clockOut', { user_id: s.user_id, date });
+    },
+    async getTodayAttendance(date) {
+      const s = requireSession();
+      const rows = await callGet('attendances.list', { user_id: s.user_id, date });
+      return Array.isArray(rows) ? (rows[0] || null) : null;
+    },
+
+    // 通知
+    async getUnreadCount() {
+      const s = requireSession();
+      return callGet('notifications.unreadCount', { user_id: s.user_id });
+    },
+    async listNotifications() {
+      const s = requireSession();
+      return callGet('notifications.list', { user_id: s.user_id });
+    },
+    async markRead(notificationIds) {
+      const s = requireSession();
+      const payload = { user_id: s.user_id };
+      if (notificationIds) payload.notification_ids = notificationIds;
+      return callPost('notifications.markRead', payload);
     },
 
     // ヘルパ

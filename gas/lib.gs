@@ -18,6 +18,7 @@ const ID_COLUMNS = {
   ShiftConfirmed: 'confirmed_id',
   Attendances:    'attendance_id',
   Notifications:  'notification_id',
+  _ExportLogs:    'export_id',   // v1.1新規
 };
 
 // ===== Sheets I/O =====

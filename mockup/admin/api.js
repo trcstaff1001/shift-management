@@ -194,6 +194,10 @@
         });
         return Promise.resolve(rows);
       }
+      case 'shiftRequests.create': {
+        const entries = (args && args.entries) || [];
+        return Promise.resolve({ created: entries.length, skipped: 0 });
+      }
       case 'shiftConfirmed.list':
         return Promise.resolve([]);
       case 'attendances.list':
@@ -231,8 +235,9 @@
     updateUser:              (payload)                   => callPost('users.update', payload),
     updateChatworkRoomId:    (user_id, chatwork_room_id) => callPost('users.updateChatworkRoomId', { user_id, chatwork_room_id }),
 
-    // シフト希望（管理者は全件 or 月単位）
-    listShiftRequests: (params) => callGet('shiftRequests.list', params || {}),
+    // シフト希望（管理者は全件 or 月単位 / 代理入力）
+    listShiftRequests:        (params)           => callGet('shiftRequests.list', params || {}),
+    proxySubmitShiftRequests: (user_id, entries) => callPost('shiftRequests.create', { user_id, entries }),
 
     // シフト確定
     confirmShifts:        (payload) => callPost('shiftConfirmed.create', payload),
@@ -246,5 +251,14 @@
 
     // 通知一覧（管理者用: 全ユーザー）
     listNotifications: (params) => callGet('notifications.listAll', params || {}),
+
+    // UI ヘルパ
+    busyButton(btn, label) {
+      if (!btn) return () => {};
+      const prev = btn.textContent, prevDis = btn.disabled;
+      btn.textContent = label || '送信中…';
+      btn.disabled = true;
+      return () => { btn.textContent = prev; btn.disabled = prevDis; };
+    },
   };
 })(window);

@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>代理入力 / シフト管理（管理）</title>
   <link rel="stylesheet" href="style.css" />
+  <script src="../../config.js"></script>
+  <script src="api.js"></script>
   <style>
     .proxy-cal {
       display: grid;
@@ -98,7 +100,7 @@
           <li><a href="login.html">ログアウト</a></li>
         </ul>
       </nav>
-      <div class="sidebar-foot">ver 0.2 (mock)</div>
+      <div class="sidebar-foot">ver 0.3</div>
     </aside>
 
     <div class="main">
@@ -162,50 +164,51 @@
   </div>
 
   <script>
-    // ------- ダミー利用者 -------
-    const users = [
-      { id: 10001, name: '田中 太郎', cat: '通所' },
-      { id: 10002, name: '佐藤 次郎', cat: '通所' },
-      { id: 10003, name: '鈴木 三郎', cat: '在宅' },
-      { id: 10004, name: '高橋 花子', cat: '通所' },
-      { id: 10005, name: '伊藤 美咲', cat: '在宅(関東)' },
-      { id: 10006, name: '渡辺 健太', cat: '通所' },
-      { id: 10007, name: '山本 直樹', cat: '在宅通所' },
-      { id: 10008, name: '中村 さくら', cat: '通所' },
-      { id: 10009, name: '小林 海斗', cat: '通所' },
-      { id: 10010, name: '加藤 結衣', cat: '在宅' },
-    ];
-
-    // ------- セレクト初期化 -------
-    const userSelect = document.getElementById('userSelect');
-    users.forEach(u => {
-      const opt = document.createElement('option');
-      opt.value = u.id;
-      // 「在宅(関東)」は管理者UIなので正式名で表示
-      opt.textContent = `#${u.id} ${u.name}（${u.cat}）`;
-      userSelect.appendChild(opt);
-    });
-
-    // URLパラメータから初期ユーザー（users.htmlの代理入力ボタンから ?uid=xxxxx で来る想定）
-    const params = new URLSearchParams(location.search);
-    const initialUid = params.get('uid');
-    if (initialUid) userSelect.value = initialUid;
-
     // ------- 状態 -------
+    let allUsers    = [];
     let currentUser = null;
-    let target = getMonthFromHash();
-    const selected = new Set();
+    let target      = getMonthFromHash();
+    const selected  = new Set();
 
     function getMonthFromHash() {
       const m = location.hash.match(/month=(\d{4})-(\d{2})/);
       if (m) return { y: +m[1], m: +m[2] };
-      // デフォルト: 翌月（=2026-05、現在を 2026-04 想定）
-      return { y: 2026, m: 5 };
+      const now = new Date();
+      const nm  = now.getMonth() === 11
+        ? { y: now.getFullYear() + 1, m: 1 }
+        : { y: now.getFullYear(), m: now.getMonth() + 2 };
+      return nm;
     }
 
     function setMonthHash(y, m) {
       location.hash = `month=${y}-${String(m).padStart(2, '0')}`;
     }
+
+    // ------- 利用者ロード -------
+    const userSelect = document.getElementById('userSelect');
+    const params     = new URLSearchParams(location.search);
+    const initialUid = params.get('uid');
+
+    (async function loadUsers() {
+      try {
+        allUsers = await ShiftAdminAPI.listUsers('利用中');
+      } catch (e) {
+        allUsers = [];
+        console.error(e);
+      }
+      allUsers.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.user_id;
+        opt.textContent = `#${u.user_id} ${u.name}（${u.category}）`;
+        userSelect.appendChild(opt);
+      });
+      if (initialUid) {
+        userSelect.value = initialUid;
+        selectUser(initialUid);
+      } else {
+        render();
+      }
+    })();
 
     // ------- カレンダー描画 -------
     function render() {
@@ -216,21 +219,21 @@
       document.getElementById('targetCard').style.display = '';
 
       const y = target.y, m = target.m;
-      const days = new Date(y, m, 0).getDate();
+      const days     = new Date(y, m, 0).getDate();
       const firstDow = new Date(y, m - 1, 1).getDay();
-      const limit = days - 8;
-      document.getElementById('limitCount').textContent = limit;
+      const limit    = days - 8;
+      document.getElementById('limitCount').textContent      = limit;
       document.getElementById('targetMonthLabel').textContent = `${y}年${m}月の希望提出`;
-      document.getElementById('monthCurrent').textContent = `${y}年${m}月`;
+      document.getElementById('monthCurrent').textContent     = `${y}年${m}月`;
       document.getElementById('limitInfo').innerHTML =
         `月の利用上限: <strong>${limit}日</strong>（${days}日 - 8日の規定）。日付をクリックで希望をオン/オフ。`;
 
-      // 閉所日: 日曜 + ダミー祝日（5月: 3,4,5,6 / その他はランダムなし）
       const closed = new Set();
       for (let d = 1; d <= days; d++) {
         if (new Date(y, m - 1, d).getDay() === 0) closed.add(d);
       }
       if (y === 2026 && m === 5) [3, 4, 5, 6].forEach(d => closed.add(d));
+      if (m === 1) [1, 2, 3, 12].forEach(d => closed.add(d));
 
       const cal = document.getElementById('proxyCal');
       cal.innerHTML = '';
@@ -246,17 +249,18 @@
         cal.appendChild(e);
       }
       for (let d = 1; d <= days; d++) {
-        const cell = document.createElement('div');
+        const cell     = document.createElement('div');
         cell.className = 'proxy-cell';
         cell.dataset.day = d;
         const isClosed = closed.has(d);
-        if (isClosed) cell.classList.add('closed');
+        if (isClosed)       cell.classList.add('closed');
         if (selected.has(d)) cell.classList.add('selected');
         cell.innerHTML = `${d}<span class="label">${isClosed ? '閉所' : (selected.has(d) ? '希望' : '—')}</span>`;
         if (!isClosed) {
           cell.addEventListener('click', () => {
-            if (selected.has(d)) selected.delete(d);
-            else {
+            if (selected.has(d)) {
+              selected.delete(d);
+            } else {
               if (selected.size >= limit) {
                 alert(`月の利用上限 ${limit}日 を超えています。\n他の日を解除してから選択してください。`);
                 return;
@@ -269,18 +273,17 @@
         cal.appendChild(cell);
       }
 
-      const count = selected.size;
-      document.getElementById('selectedCount').textContent = count;
-      document.getElementById('submitBtn').disabled = count === 0;
+      document.getElementById('selectedCount').textContent = selected.size;
+      document.getElementById('submitBtn').disabled = selected.size === 0;
     }
 
     // ------- ユーザー切替 -------
     function selectUser(uid) {
-      currentUser = users.find(u => u.id === Number(uid)) || null;
+      currentUser = allUsers.find(u => u.user_id === Number(uid)) || null;
       selected.clear();
       if (currentUser) {
         document.getElementById('proxyName').textContent = `代理入力中: ${currentUser.name} さん`;
-        document.getElementById('proxyMeta').textContent = `#${currentUser.id} / ${currentUser.cat}`;
+        document.getElementById('proxyMeta').textContent = `#${currentUser.user_id} / ${currentUser.category}`;
       } else {
         document.getElementById('proxyName').textContent = '利用者を選択してください';
         document.getElementById('proxyMeta').textContent = '';
@@ -295,7 +298,7 @@
       btn.addEventListener('click', () => {
         const dir = +btn.dataset.dir;
         let y = target.y, m = target.m + dir;
-        if (m < 1) { m = 12; y--; }
+        if (m < 1)  { m = 12; y--; }
         else if (m > 12) { m = 1; y++; }
         setMonthHash(y, m);
       });
@@ -308,27 +311,36 @@
     });
 
     // ------- 提出 -------
-    document.getElementById('submitBtn').addEventListener('click', () => {
+    document.getElementById('submitBtn').addEventListener('click', async () => {
       if (!currentUser || selected.size === 0) return;
-      const dates = [...selected].sort((a, b) => a - b)
-        .map(d => `${target.y}-${String(target.m).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+
+      const mm      = String(target.m).padStart(2, '0');
+      const isZaitaku = ['在宅', '在宅(関東)', '在宅通所'].includes(currentUser.category);
+      const entries = [...selected].sort((a, b) => a - b).map(d => ({
+        date:       `${target.y}-${mm}-${String(d).padStart(2, '0')}`,
+        shift_type: isZaitaku ? '在宅' : '通所',
+      }));
+
       const ok = confirm(
         `${currentUser.name} さんとして以下を提出します。\n\n` +
         `対象月: ${target.y}年${target.m}月\n` +
-        `日数: ${dates.length}日\n` +
-        `日付: ${dates.join(', ')}\n\n` +
+        `日数: ${entries.length}日\n\n` +
         `よろしいですか？`
       );
-      if (ok) {
-        alert(`提出しました（モック）\n\nAPI想定:\nPOST shiftRequests.create\npayload: { user_id: ${currentUser.id}, dates: [${dates.length}件], acting_admin_id: <現ログイン管理者ID> }`);
+      if (!ok) return;
+
+      const btn     = document.getElementById('submitBtn');
+      const restore = ShiftAdminAPI.busyButton(btn, '送信中…');
+      try {
+        await ShiftAdminAPI.proxySubmitShiftRequests(currentUser.user_id, entries);
+        alert(`${currentUser.name} さんのシフト希望（${entries.length}日）を提出しました。`);
         selected.clear();
         render();
+      } catch (err) {
+        alert('提出に失敗しました: ' + (err.message || 'エラー'));
+        restore();
       }
     });
-
-    // ------- 初期化 -------
-    if (initialUid) selectUser(initialUid);
-    else render();
   </script>
 </body>
 </html>

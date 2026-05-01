@@ -1,0 +1,5 @@
+# GAS 接続情報（スプレッドシートID・エンドポイントURL）
+config.js
+
+# clasp（スクリプトID・スプレッドシートID）
+gas/.clasp.json

@@ -56,6 +56,54 @@
 
   // ===== モックデータ =====
 
+  const MOCK_NOTIFICATIONS = [
+    { notification_id: 142, user_id: 10001, type: 'シフト確定通知', target_date: '2026-05',
+      message: '5月のシフトが確定しました（15日）', is_read: 'TRUE',
+      mail_sent_at: '2026-04-27 10:30:12', chatwork_sent_at: '2026-04-27 10:30:13',
+      chatwork_message_id: '100001', chatwork_error: '', created_at: '2026-04-27 10:30:12',
+      name: '田中 太郎', email: 'tanaka@example.com' },
+    { notification_id: 141, user_id: 10002, type: 'シフト確定通知', target_date: '2026-05',
+      message: '5月のシフトが確定しました（17日）', is_read: 'FALSE',
+      mail_sent_at: '2026-04-27 10:30:08', chatwork_sent_at: '2026-04-27 10:30:09',
+      chatwork_message_id: '100002', chatwork_error: '', created_at: '2026-04-27 10:30:08',
+      name: '佐藤 次郎', email: 'sato@example.com' },
+    { notification_id: 140, user_id: 10006, type: 'シフト確定通知', target_date: '2026-05',
+      message: '5月のシフトが確定しました（18日）', is_read: 'FALSE',
+      mail_sent_at: '', chatwork_sent_at: '', chatwork_message_id: '', chatwork_error: '',
+      created_at: '2026-04-27 10:30:05', name: '渡辺 健太', email: 'watanabe_e7@local' },
+    { notification_id: 139, user_id: 10003, type: '空き枠通知', target_date: '2026-04-27',
+      message: '4/27 に空きが出ました', is_read: 'FALSE',
+      mail_sent_at: '', chatwork_sent_at: '', chatwork_message_id: '', chatwork_error: 'Mailbox full',
+      created_at: '2026-04-26 09:15:42', name: '鈴木 三郎', email: 'suzuki@example.com' },
+    { notification_id: 138, user_id: 10004, type: '空き枠通知', target_date: '2026-04-27',
+      message: '4/27 に空きが出ました', is_read: 'FALSE',
+      mail_sent_at: '2026-04-26 09:15:40', chatwork_sent_at: '',
+      chatwork_message_id: '', chatwork_error: 'HTTP 429: Rate limit exceeded',
+      created_at: '2026-04-26 09:15:40', name: '高橋 花子', email: 'takahashi@example.com' },
+    { notification_id: 137, user_id: 10010, type: 'その他', target_date: '',
+      message: 'パスワード再設定リンクを送信しました', is_read: 'TRUE',
+      mail_sent_at: '2026-04-25 14:20:30', chatwork_sent_at: '2026-04-25 14:20:31',
+      chatwork_message_id: '100010', chatwork_error: '', created_at: '2026-04-25 14:20:30',
+      name: '加藤 結衣', email: 'kato@example.com' },
+    { notification_id: 136, user_id: 10009, type: 'その他', target_date: '',
+      message: '5月のシフト希望が未提出です（締切 4/30）', is_read: 'FALSE',
+      mail_sent_at: '2026-04-24 11:45:00', chatwork_sent_at: '', chatwork_message_id: '', chatwork_error: '',
+      created_at: '2026-04-24 11:45:00', name: '小林 海斗', email: 'kobayashi@example.com' },
+    { notification_id: 135, user_id: 10003, type: 'その他', target_date: '',
+      message: '5月のシフト希望が未提出です（締切 4/30）', is_read: 'FALSE',
+      mail_sent_at: '2026-04-24 11:45:00', chatwork_sent_at: '', chatwork_message_id: '', chatwork_error: '',
+      created_at: '2026-04-24 11:45:00', name: '鈴木 三郎', email: 'suzuki@example.com' },
+    { notification_id: 134, user_id: 10011, type: 'その他', target_date: '',
+      message: '招待メールを送信しました（仮パスワード発行）', is_read: 'FALSE',
+      mail_sent_at: '', chatwork_sent_at: '', chatwork_message_id: '', chatwork_error: 'Address not found',
+      created_at: '2026-04-22 09:00:15', name: '吉田 翔', email: 'yoshida_invalid@example.com' },
+    { notification_id: 133, user_id: 10007, type: 'シフト確定通知', target_date: '2026-05',
+      message: '5月のシフトが確定しました（14日）', is_read: 'TRUE',
+      mail_sent_at: '2026-04-22 08:00:00', chatwork_sent_at: '2026-04-22 08:00:01',
+      chatwork_message_id: '100007', chatwork_error: '', created_at: '2026-04-22 08:00:00',
+      name: '山本 直樹', email: 'yamamoto@example.com' },
+  ];
+
   const MOCK_USERS = [
     { user_id: 10001, name: '田中 太郎',   category: '通所',       email: 'tanaka@example.com',    status: '利用中', chatwork_room_id: '111222333' },
     { user_id: 10002, name: '佐藤 次郎',   category: '通所',       email: 'sato@example.com',      status: '利用中', chatwork_room_id: '444555666' },
@@ -88,6 +136,15 @@
         return Promise.resolve({
           user: { user_id: 99999, name: args.name, category: args.category, email: args.email, status: '利用中', chatwork_room_id: '' },
         });
+      case 'users.update': {
+        const u = MOCK_USERS.find(x => x.user_id === Number(args.user_id));
+        if (u) {
+          if (args.category        != null) u.category         = args.category;
+          if (args.chatwork_room_id != null) u.chatwork_room_id = String(args.chatwork_room_id);
+          if (args.status          != null) u.status           = args.status;
+        }
+        return Promise.resolve(u || {});
+      }
       case 'users.updateChatworkRoomId': {
         const u = MOCK_USERS.find(x => x.user_id === Number(args.user_id));
         if (u) u.chatwork_room_id = String(args.chatwork_room_id || '');
@@ -138,6 +195,8 @@
           generated_at:   new Date().toISOString().replace('T', ' ').slice(0, 19),
         });
       }
+      case 'notifications.listAll':
+        return Promise.resolve(MOCK_NOTIFICATIONS);
       default:
         return Promise.reject(new Error('mock 未対応 action: ' + action));
     }
@@ -154,6 +213,7 @@
     // 利用者
     listUsers:               (status)                    => callGet('users.list', status ? { status } : null),
     inviteUser:              (payload)                   => callPost('users.invite', payload),
+    updateUser:              (payload)                   => callPost('users.update', payload),
     updateChatworkRoomId:    (user_id, chatwork_room_id) => callPost('users.updateChatworkRoomId', { user_id, chatwork_room_id }),
 
     // シフト希望（管理者は全件 or 月単位）
@@ -164,5 +224,8 @@
 
     // エクスポート
     exportSpreadsheet: (year_month)   => callPost('exports.spreadsheet', { year_month }),
+
+    // 通知一覧（管理者用: 全ユーザー）
+    listNotifications: (params) => callGet('notifications.listAll', params || {}),
   };
 })(window);

@@ -17,48 +17,8 @@
     </header>
 
     <main class="app-main">
-      <p class="page-lead">未読の通知が <strong>2件</strong> あります</p>
-
-      <ul class="notif-list">
-        <li class="notif-item unread">
-          <p class="notif-type">空き枠のお知らせ</p>
-          <p class="notif-message">
-            5月14日（水）の枠が空きました。追加で通所できます。
-          </p>
-          <p class="notif-meta">2026年4月26日 14:32</p>
-          <div class="notif-action btn-stack">
-            <button class="btn" type="button" onclick="alert('追加申し込みしました（モック）')">追加で申し込む</button>
-            <button class="btn btn-secondary" type="button">あとで</button>
-          </div>
-        </li>
-
-        <li class="notif-item unread">
-          <p class="notif-type">シフト確定のお知らせ</p>
-          <p class="notif-message">
-            5月のシフトが確定しました。確定シフトをご確認ください。
-          </p>
-          <p class="notif-meta">2026年4月25日 18:05</p>
-          <div class="notif-action">
-            <a class="btn btn-secondary" href="calendar.html">確定シフトを見る</a>
-          </div>
-        </li>
-
-        <li class="notif-item">
-          <p class="notif-type">シフト確定のお知らせ</p>
-          <p class="notif-message">
-            4月のシフトが確定しました。
-          </p>
-          <p class="notif-meta">2026年3月25日 18:00</p>
-        </li>
-
-        <li class="notif-item">
-          <p class="notif-type">その他</p>
-          <p class="notif-message">
-            シフト管理アプリへようこそ。初回ログインありがとうございます。
-          </p>
-          <p class="notif-meta">2026年3月10日 09:15</p>
-        </li>
-      </ul>
+      <p class="page-lead" id="unreadLead">読み込み中…</p>
+      <ul class="notif-list" id="notifList"></ul>
     </main>
 
     <nav class="app-footer-nav">
@@ -70,8 +30,68 @@
   </div>
 
   <script>
-    // notifications.list は未実装。セッションチェックのみ実施し、表示は固定モック。
     ShiftAPI.requireSession();
+
+    function formatDate(str) {
+      const d = new Date(String(str).replace(' ', 'T'));
+      if (isNaN(d)) return str;
+      return d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日 '
+        + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    }
+
+    function actionHtml(n) {
+      if (n.type === 'シフト確定通知') {
+        return '<div class="notif-action"><a class="btn btn-secondary" href="calendar.html">確定シフトを見る</a></div>';
+      }
+      if (n.type === '空き枠通知') {
+        return '<div class="notif-action"><a class="btn btn-secondary" href="request.html">希望を出す</a></div>';
+      }
+      return '';
+    }
+
+    function typeLabel(t) {
+      if (t === 'シフト確定通知') return 'シフト確定のお知らせ';
+      if (t === '空き枠通知')     return '空き枠のお知らせ';
+      return 'その他';
+    }
+
+    (async function init() {
+      try {
+        const notifs = await ShiftAPI.listNotifications();
+        const unread = notifs.filter(n => String(n.is_read).toUpperCase() !== 'TRUE');
+
+        document.getElementById('unreadLead').innerHTML =
+          unread.length > 0
+            ? '未読の通知が <strong>' + unread.length + '件</strong> あります'
+            : '未読の通知はありません';
+
+        const list = document.getElementById('notifList');
+        if (notifs.length === 0) {
+          list.innerHTML = '<li class="notif-item"><p class="notif-message text-muted">通知はありません</p></li>';
+          return;
+        }
+
+        list.innerHTML = notifs.map(n => {
+          const isUnread = String(n.is_read).toUpperCase() !== 'TRUE';
+          return [
+            '<li class="notif-item' + (isUnread ? ' unread' : '') + '">',
+            '<p class="notif-type">' + typeLabel(n.type) + '</p>',
+            '<p class="notif-message">' + (n.message || '—') + '</p>',
+            '<p class="notif-meta">' + formatDate(n.created_at) + '</p>',
+            actionHtml(n),
+            '</li>',
+          ].join('');
+        }).join('');
+
+        // ページを開いた時点で全件既読化
+        if (unread.length > 0) {
+          await ShiftAPI.markRead(null);
+        }
+      } catch (e) {
+        document.getElementById('unreadLead').textContent = '読み込みに失敗しました';
+        console.error(e);
+      }
+    })();
   </script>
 </body>
 </html>

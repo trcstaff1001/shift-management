@@ -30,10 +30,12 @@ const ROUTES = {
   // GET 系
   'config.list':                   handleConfigList,
   'users.list':                    handleUsersList,
+  'users.me':                      handleUsersMe,
   'shiftRequests.list':            handleShiftRequestsList,
   'shiftConfirmed.list':           handleShiftConfirmedList,
   'attendances.list':              handleAttendancesList,
   'notifications.list':            handleNotificationsList,
+  'notifications.listAll':         handleNotificationsListAll,
   'notifications.unreadCount':     handleNotificationsUnreadCount,
 
   // POST 系
@@ -47,6 +49,7 @@ const ROUTES = {
   'notifications.markRead':        handleNotificationsMarkRead,
   'exports.spreadsheet':           handleExportsSpreadsheet,
   'users.invite':                  handleUsersInvite,
+  'users.update':                  handleUsersUpdate,
   'users.updateChatworkRoomId':    handleUsersUpdateChatworkRoomId,
 };
 
@@ -78,6 +81,15 @@ function _dispatch(action, params, payload) {
 /** GET ?action=config.list */
 function handleConfigList() {
   return jsonResponse({ data: getConfig() });
+}
+
+/** GET ?action=users.me&user_id=1 — 利用者が自分のプロフィールを取得（セッション更新用） */
+function handleUsersMe(params) {
+  const userId = Number(params.user_id);
+  if (!userId) return errorResponse('user_id 必須', 'BAD_PAYLOAD');
+  const user = readTable('Users').find(u => Number(u.user_id) === userId);
+  if (!user) return errorResponse('ユーザーが見つかりません', 'USER_NOT_FOUND');
+  return jsonResponse({ data: _stripPassword(user) });
 }
 
 /** GET ?action=users.list[&status=利用中] */
@@ -117,6 +129,26 @@ function handleAttendancesList(params) {
   if (month)          rows = rows.filter(r => String(r.date).startsWith(month));
   if (userId != null) rows = rows.filter(r => Number(r.user_id) === userId);
   return jsonResponse({ data: rows });
+}
+
+/**
+ * GET ?action=notifications.listAll[&limit=100]
+ * 管理者用: 全ユーザーの通知を created_at 降順で返す。Users テーブルを JOIN して name/email を付与。
+ */
+function handleNotificationsListAll(params) {
+  const limit = params.limit ? Number(params.limit) : 100;
+  let rows = readTable('Notifications')
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  if (limit > 0) rows = rows.slice(0, limit);
+
+  const userMap = {};
+  readTable('Users').forEach(u => { userMap[String(u.user_id)] = u; });
+
+  const enriched = rows.map(n => {
+    const u = userMap[String(n.user_id)] || {};
+    return Object.assign({}, n, { name: u.name || '—', email: u.email || '—' });
+  });
+  return jsonResponse({ data: enriched });
 }
 
 /**
@@ -168,25 +200,42 @@ function handleAuthLogin(params, payload) {
 
 /**
  * POST shiftRequests.create
- *   payload: { user_id, dates: ['YYYY-MM-DD', ...] }
+ *   payload: { user_id, entries: [{ date, shift_type, preferred_time? }] }
+ *   後方互換: entries がなく dates がある場合は dates を通所として扱う。
  *   重複はスキップ。規定超過は希望段階ではブロックしない（確定時に管理者が調整）。
  */
 function handleShiftRequestsCreate(params, payload) {
   const userId = Number(payload.user_id);
-  const dates  = Array.isArray(payload.dates) ? payload.dates : [];
-  if (!userId || dates.length === 0) return errorResponse('user_id と dates 必須', 'BAD_PAYLOAD');
+  if (!userId) return errorResponse('user_id 必須', 'BAD_PAYLOAD');
 
+  // entries 形式 or 旧 dates 形式どちらも受け付ける
+  let entries;
+  if (Array.isArray(payload.entries)) {
+    entries = payload.entries;
+  } else if (Array.isArray(payload.dates)) {
+    entries = payload.dates.map(d => ({ date: d, shift_type: '通所', preferred_time: '' }));
+  } else {
+    return errorResponse('entries または dates 必須', 'BAD_PAYLOAD');
+  }
+  if (entries.length === 0) return errorResponse('entries が空です', 'BAD_PAYLOAD');
+
+  const dates = entries.map(e => String(e.date));
   const existing     = readTable('ShiftRequests').filter(r =>
     Number(r.user_id) === userId && dates.includes(String(r.date))
   );
   const existingDates = new Set(existing.map(r => String(r.date)));
-  const toCreate      = dates.filter(d => !existingDates.has(d));
+  const toCreate      = entries.filter(e => !existingDates.has(String(e.date)));
 
-  const created = toCreate.map(d => appendRow('ShiftRequests', {
-    user_id: userId, date: d, status: '提出済', submitted_at: nowJst(),
+  const created = toCreate.map(e => appendRow('ShiftRequests', {
+    user_id:        userId,
+    date:           e.date,
+    shift_type:     e.shift_type     || '通所',
+    preferred_time: e.preferred_time || '',
+    status:         '提出済',
+    submitted_at:   nowJst(),
   }));
 
-  return jsonResponse({ data: { created, skipped: Array.from(existingDates) } });
+  return jsonResponse({ data: { created: created.length, skipped: Array.from(existingDates) } });
 }
 
 /**
@@ -475,6 +524,7 @@ function handleUsersInvite(params, payload) {
     try {
       MailApp.sendEmail({
         to: email,
+        name: 'シフト管理システム',
         subject: '【シフト管理システム】利用者招待',
         body: [
           name + ' 様',
@@ -509,6 +559,36 @@ function handleUsersInvite(params, payload) {
       mail_sent:     mailSent,
     },
   });
+}
+
+/**
+/**
+ * POST users.update（管理者用: カテゴリ・ChatWork ルームID・ステータスを更新）
+ *   payload: { user_id, category?, chatwork_room_id?, status? }
+ */
+function handleUsersUpdate(params, payload) {
+  const userId         = Number(payload.user_id);
+  const validCategories = ['通所', '在宅', '在宅(関東)', '在宅通所'];
+  const validStatuses   = ['利用中', '停止', '退所'];
+  if (!userId) return errorResponse('user_id 必須', 'BAD_PAYLOAD');
+
+  const patch = {};
+  if (payload.category != null) {
+    if (!validCategories.includes(payload.category))
+      return errorResponse('category 不正: ' + payload.category, 'BAD_PAYLOAD');
+    patch.category = payload.category;
+  }
+  if (payload.chatwork_room_id != null) patch.chatwork_room_id = String(payload.chatwork_room_id).trim();
+  if (payload.status != null) {
+    if (!validStatuses.includes(payload.status))
+      return errorResponse('status 不正: ' + payload.status, 'BAD_PAYLOAD');
+    patch.status = payload.status;
+  }
+  if (Object.keys(patch).length === 0) return errorResponse('更新フィールドがありません', 'BAD_PAYLOAD');
+
+  const updated = updateRow('Users', r => Number(r.user_id) === userId, patch);
+  if (!updated) return errorResponse('user_id ' + userId + ' が見つかりません', 'USER_NOT_FOUND');
+  return jsonResponse({ data: _stripPassword(updated) });
 }
 
 /**

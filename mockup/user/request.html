@@ -7,6 +7,56 @@
   <link rel="stylesheet" href="style.css" />
   <script src="../../config.js"></script>
   <script src="api.js"></script>
+  <style>
+    .cell.visit {
+      background: #f59e0b;
+      color: #fff;
+      position: relative;
+    }
+    .cell.visit::after {
+      content: '★';
+      font-size: 9px;
+      position: absolute;
+      bottom: 2px;
+      right: 2px;
+      line-height: 1;
+    }
+    .legend-swatch.swatch-visit { background: #f59e0b; }
+    .legend-visit { display: none; }
+
+    .visit-panel {
+      margin-top: 16px;
+      padding: 14px 16px;
+      background: #fff7ed;
+      border: 1px solid #f59e0b;
+      border-radius: 8px;
+    }
+    .visit-panel-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #92400e;
+      margin: 0 0 10px;
+    }
+    .visit-day-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+    .visit-day-label { min-width: 86px; font-weight: 600; }
+    .time-btn {
+      padding: 4px 10px;
+      border: 1px solid #d97706;
+      border-radius: 4px;
+      background: #fff;
+      color: #92400e;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .time-btn.active { background: #d97706; color: #fff; }
+    .visit-hint { font-size: 11px; color: #78716c; margin: 8px 0 0; }
+  </style>
 </head>
 <body>
   <div class="app">
@@ -17,23 +67,21 @@
     </header>
 
     <main class="app-main">
-      <h2 class="page-title">5月のシフト希望</h2>
-      <p class="page-lead">通所したい日をタップしてください</p>
+      <h2 class="page-title" id="pageTitle">—月のシフト希望</h2>
+      <p class="page-lead" id="pageLead"></p>
 
       <div class="counter-bar" id="counterBar">
         <span class="counter-label">選択中</span>
-        <span class="counter-value"><span id="selectedCount">0</span> / <span id="limitDays">23</span> 日</span>
+        <span class="counter-value"><span id="selectedCount">0</span> / <span id="limitDays">—</span> 日</span>
       </div>
 
       <div class="card" style="background: var(--warning-bg); border-color: var(--warning); padding: 12px 16px;">
-        <p class="card-meta" style="color: var(--warning); font-weight: 600; margin: 0;">
-          提出締切: 2026年4月15日（あと <strong>3日</strong>）
-        </p>
+        <p class="card-meta" style="color: var(--warning); font-weight: 600; margin: 0;" id="deadlineNotice">提出締切: —</p>
       </div>
 
       <div class="calendar-nav">
         <button type="button" disabled aria-label="前月">‹</button>
-        <span class="month">2026年 5月</span>
+        <span class="month" id="monthLabel">—</span>
         <button type="button" disabled aria-label="次月">›</button>
       </div>
 
@@ -48,8 +96,15 @@
       </div>
 
       <div class="legend">
-        <span class="legend-item"><span class="legend-swatch swatch-selected"></span>選択中</span>
+        <span class="legend-item"><span class="legend-swatch swatch-selected"></span><span id="legendSelected">希望</span></span>
+        <span class="legend-item legend-visit"><span class="legend-swatch swatch-visit"></span>通所（月一）</span>
         <span class="legend-item"><span class="legend-swatch swatch-closed"></span>閉所日</span>
+      </div>
+
+      <div class="visit-panel" id="visitPanel" style="display:none;">
+        <p class="visit-panel-title">📅 通所（月一）の希望時間帯</p>
+        <div id="visitTimeList"></div>
+        <p class="visit-hint">第1希望から順に調整します（最大3日）</p>
       </div>
 
       <div class="btn-stack mt-4" style="margin-top: 24px;">
@@ -62,10 +117,8 @@
   <div class="modal-overlay" id="confirmModal">
     <div class="modal">
       <h2>提出してもよろしいですか？</h2>
-      <p>
-        5月の希望: <strong id="modalCount">0</strong> 日<br>
-        提出後も締切までは修正できます
-      </p>
+      <p id="confirmDesc"></p>
+      <p style="font-size:13px; color:var(--text-muted);">提出後も締切までは修正できます</p>
       <div class="btn-stack">
         <button class="btn" id="modalSubmit" type="button">はい、提出する</button>
         <button class="btn btn-secondary" id="modalCancel" type="button">キャンセル</button>
@@ -76,32 +129,59 @@
   <div class="modal-overlay" id="doneModal">
     <div class="modal">
       <h2>提出しました</h2>
-      <p>5月のシフト希望を受け付けました。確定したらお知らせします。</p>
+      <p id="doneDesc">シフト希望を受け付けました。確定したらお知らせします。</p>
       <a class="btn" href="home.html">ホームへ戻る</a>
     </div>
   </div>
 
   <script>
-    const YEAR = 2026;
-    const MONTH = 5;
-    const DAYS_IN_MONTH = 31;
-    const FIRST_DOW = new Date(YEAR, MONTH - 1, 1).getDay();
-    const LIMIT = 23;
+    ShiftAPI.requireSession();
+    const session   = ShiftAPI.getSession();
+    const isZaitaku = session && ['在宅', '在宅(関東)', '在宅通所'].includes(session.category);
+    const MAX_VISIT = 3;
 
+    // ===== 月の設定（翌月） =====
+    const now   = new Date();
+    const YEAR  = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
+    const MONTH = now.getMonth() === 11 ? 1 : now.getMonth() + 2;
+    const DAYS  = new Date(YEAR, MONTH, 0).getDate();
+    const LIMIT = DAYS - 8;
+
+    document.getElementById('pageTitle').textContent     = MONTH + '月のシフト希望';
+    document.getElementById('monthLabel').textContent    = YEAR + '年 ' + MONTH + '月';
+    document.getElementById('limitDays').textContent     = LIMIT;
+    document.getElementById('pageLead').textContent      = isZaitaku
+      ? '在宅で働く日をタップ。通所したい日は2回タップしてください（最大3日）'
+      : '通所したい日をタップしてください';
+    document.getElementById('legendSelected').textContent = isZaitaku ? '在宅希望' : '通所希望';
+    if (isZaitaku) document.querySelector('.legend-visit').style.display = '';
+
+    const deadline = new Date(YEAR, MONTH - 1, 15);
+    const daysLeft = Math.max(0, Math.ceil((deadline - now) / 86400000));
+    document.getElementById('deadlineNotice').textContent =
+      '提出締切: ' + YEAR + '年' + MONTH + '月15日（あと' + daysLeft + '日）';
+
+    // ===== 閉所日 =====
     const closedDates = new Set();
-    for (let d = 1; d <= DAYS_IN_MONTH; d++) {
+    for (let d = 1; d <= DAYS; d++) {
       if (new Date(YEAR, MONTH - 1, d).getDay() === 0) closedDates.add(d);
     }
-    [3, 4, 5, 6].forEach(d => closedDates.add(d));
+    if (YEAR === 2026 && MONTH === 5) [3, 4, 5, 6].forEach(d => closedDates.add(d));
 
-    const cal = document.getElementById('calendar');
-    for (let i = 0; i < FIRST_DOW; i++) {
-      const empty = document.createElement('div');
-      empty.className = 'cell empty';
-      cal.appendChild(empty);
+    // ===== 状態管理 =====
+    const cellStates = new Map(); // day → 'regular' | 'visit'
+    const visitTimes = new Map(); // day → '午前' | '午後' | '一日'
+    const visitOrder = [];        // 月一通所の選択順（第1/2/3希望）
+
+    // ===== カレンダー構築 =====
+    const cal   = document.getElementById('calendar');
+    const first = new Date(YEAR, MONTH - 1, 1).getDay();
+    for (let i = 0; i < first; i++) {
+      const el = document.createElement('div');
+      el.className = 'cell empty';
+      cal.appendChild(el);
     }
-    const selected = new Set();
-    for (let d = 1; d <= DAYS_IN_MONTH; d++) {
+    for (let d = 1; d <= DAYS; d++) {
       const cell = document.createElement('div');
       cell.className = 'cell';
       cell.textContent = d;
@@ -109,51 +189,123 @@
       if (closedDates.has(d)) {
         cell.classList.add('closed');
       } else {
-        cell.addEventListener('click', () => toggleCell(d, cell));
+        cell.addEventListener('click', () => cycleCell(d, cell));
       }
       cal.appendChild(cell);
     }
 
-    function toggleCell(day, cell) {
-      if (selected.has(day)) {
-        selected.delete(day);
-        cell.classList.remove('selected');
-      } else {
-        if (selected.size >= LIMIT) {
-          alert(`5月は最大 ${LIMIT} 日までしか選択できません`);
-          return;
+    // ===== サイクルロジック =====
+    function cycleCell(day, cell) {
+      const cur = cellStates.get(day) || 'none';
+      let next;
+
+      if (isZaitaku) {
+        if (cur === 'none') {
+          if (cellStates.size >= LIMIT) {
+            alert(MONTH + '月は最大 ' + LIMIT + ' 日まで選択できません');
+            return;
+          }
+          next = 'regular';
+        } else if (cur === 'regular') {
+          // MAX_VISIT 未満なら visit へ、上限に達していたら none に戻す
+          next = visitOrder.length < MAX_VISIT ? 'visit' : 'none';
+        } else {
+          next = 'none';
         }
-        selected.add(day);
-        cell.classList.add('selected');
+      } else {
+        if (cur === 'none') {
+          const count = [...cellStates.values()].filter(s => s === 'regular').length;
+          if (count >= LIMIT) { alert(MONTH + '月は最大 ' + LIMIT + ' 日まで選択できません'); return; }
+          next = 'regular';
+        } else {
+          next = 'none';
+        }
       }
+
+      if (cur === 'visit') {
+        visitOrder.splice(visitOrder.indexOf(day), 1);
+        visitTimes.delete(day);
+      }
+      if (next === 'visit') {
+        visitOrder.push(day);
+        visitTimes.set(day, '一日');
+      }
+
+      if (next === 'none') cellStates.delete(day);
+      else                 cellStates.set(day, next);
+
+      cell.classList.remove('selected', 'visit');
+      if (next === 'regular') cell.classList.add('selected');
+      if (next === 'visit')   cell.classList.add('visit');
+
+      updateVisitPanel();
       updateCounter();
     }
 
-    function updateCounter() {
-      document.getElementById('selectedCount').textContent = selected.size;
-      const bar = document.getElementById('counterBar');
-      bar.classList.toggle('warn', selected.size >= LIMIT - 3 && selected.size < LIMIT);
-      bar.classList.toggle('over', selected.size >= LIMIT);
-      document.getElementById('submitBtn').disabled = selected.size === 0;
+    // ===== 時間帯パネル =====
+    function updateVisitPanel() {
+      const panel = document.getElementById('visitPanel');
+      if (!isZaitaku || visitOrder.length === 0) { panel.style.display = 'none'; return; }
+      panel.style.display = '';
+      const labels = ['第1希望', '第2希望', '第3希望'];
+      document.getElementById('visitTimeList').innerHTML = visitOrder.map((day, i) => {
+        const t = visitTimes.get(day) || '一日';
+        const btns = ['午前', '午後', '一日'].map(opt =>
+          '<button class="time-btn' + (t === opt ? ' active' : '') + '" '
+          + 'onclick="setVisitTime(' + day + ',\'' + opt + '\')">' + opt + '</button>'
+        ).join('');
+        return '<div class="visit-day-row">'
+          + '<span class="visit-day-label">' + labels[i] + ': ' + day + '日</span>'
+          + btns + '</div>';
+      }).join('');
     }
 
+    function setVisitTime(day, time) {
+      visitTimes.set(day, time);
+      updateVisitPanel();
+    }
+
+    // ===== カウンター =====
+    function updateCounter() {
+      const total = cellStates.size;
+      document.getElementById('selectedCount').textContent = total;
+      const bar = document.getElementById('counterBar');
+      bar.classList.toggle('warn', total >= LIMIT - 3 && total < LIMIT);
+      bar.classList.toggle('over', total >= LIMIT);
+      document.getElementById('submitBtn').disabled = total === 0;
+    }
+
+    // ===== 提出 =====
     document.getElementById('submitBtn').addEventListener('click', () => {
-      document.getElementById('modalCount').textContent = selected.size;
+      const regular = [...cellStates.values()].filter(s => s === 'regular').length;
+      const visit   = visitOrder.length;
+      let desc = MONTH + '月の希望: ' + regular + '日';
+      if (isZaitaku && visit > 0) {
+        desc += '\n通所（月一）: ' + visitOrder.map((d, i) =>
+          '第' + (i + 1) + '希望 ' + d + '日（' + (visitTimes.get(d) || '一日') + '）'
+        ).join('・');
+      }
+      document.getElementById('confirmDesc').textContent = desc;
       document.getElementById('confirmModal').classList.add('is-open');
     });
+
     document.getElementById('modalCancel').addEventListener('click', () => {
       document.getElementById('confirmModal').classList.remove('is-open');
     });
+
     document.getElementById('modalSubmit').addEventListener('click', async () => {
-      const submitBtn = document.getElementById('modalSubmit');
-      const restore = ShiftAPI.busyButton(submitBtn, '送信中…');
+      const btn     = document.getElementById('modalSubmit');
+      const restore = ShiftAPI.busyButton(btn, '送信中…');
       try {
-        // 翌月分（5月）の希望を YYYY-MM-DD で送る
-        const dates = Array.from(selected).sort((a, b) => a - b).map(d => {
-          const dd = String(d).padStart(2, '0');
-          return YEAR + '-' + String(MONTH).padStart(2, '0') + '-' + dd;
+        const mm      = String(MONTH).padStart(2, '0');
+        const entries = [...cellStates.entries()].map(([d, state]) => {
+          const date = YEAR + '-' + mm + '-' + String(d).padStart(2, '0');
+          if (state === 'visit') {
+            return { date, shift_type: '月一通所', preferred_time: visitTimes.get(d) || '一日' };
+          }
+          return { date, shift_type: isZaitaku ? '在宅' : '通所' };
         });
-        await ShiftAPI.submitShiftRequests(dates);
+        await ShiftAPI.submitShiftRequests(entries);
         document.getElementById('confirmModal').classList.remove('is-open');
         document.getElementById('doneModal').classList.add('is-open');
       } catch (err) {
@@ -161,9 +313,6 @@
         restore();
       }
     });
-
-    // セッションチェック
-    ShiftAPI.requireSession();
   </script>
 </body>
 </html>

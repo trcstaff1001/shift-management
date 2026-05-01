@@ -37,16 +37,9 @@
     <p class="text-sm text-muted center mt-4" style="margin-top: 24px;">
       利用者IDが分からない方は支援員にお声がけください
     </p>
-    <p id="modeNotice" class="text-sm text-muted center" style="display: none; margin-top: 12px;">
-      ※ モックモードで動作中（API未接続）
-    </p>
   </main>
 
   <script>
-    if (ShiftAPI.isMockMode()) {
-      document.getElementById('modeNotice').style.display = 'block';
-    }
-
     // 既にログイン済みなら home へ
     if (ShiftAPI.getSession()) {
       location.href = 'home.html';

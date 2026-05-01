@@ -120,6 +120,8 @@
         return Promise.resolve({
           user: { user_id: 10001, name: '田中 太郎', category: '通所' },
         });
+      case 'users.me':
+        return Promise.resolve({ user_id: 10001, name: '田中 太郎', category: '通所', status: '利用中' });
       case 'users.list':
         return Promise.resolve([
           { user_id: 10001, name: '田中 太郎', category: '通所', status: '利用中' },
@@ -146,7 +148,7 @@
         ]);
       }
       case 'shiftRequests.create':
-        return Promise.resolve({ created: args.dates || [], skipped: [] });
+        return Promise.resolve({ created: (args.entries || args.dates || []).length, skipped: 0 });
       case 'attendances.clockIn': {
         const date = (args && args.date) || _mockDate();
         const rec = { attendance_id: 9001, user_id: 10001, date, status: '未確定', clock_in: _mockNow(), clock_out: '', source: 'self_clock' };
@@ -223,10 +225,18 @@
     // 利用者
     async getMe() {
       const s = requireSession();
-      // モックモードはセッションを返すだけ
-      if (isMockMode()) return s;
-      const users = await callGet('users.list', { status: '利用中' });
-      return users.find(u => Number(u.user_id) === Number(s.user_id)) || s;
+      return callGet('users.me', { user_id: s.user_id });
+    },
+    async refreshSession() {
+      const s = getSession();
+      if (!s) return null;
+      try {
+        const user = await callGet('users.me', { user_id: s.user_id });
+        setSession(user);
+        return user;
+      } catch (e) {
+        return s; // 失敗時はキャッシュを継続使用
+      }
     },
 
     // シフト希望
@@ -234,9 +244,9 @@
       const s = requireSession();
       return callGet('shiftRequests.list', { user_id: s.user_id, month });
     },
-    async submitShiftRequests(dates) {
+    async submitShiftRequests(entries) {
       const s = requireSession();
-      return callPost('shiftRequests.create', { user_id: s.user_id, dates });
+      return callPost('shiftRequests.create', { user_id: s.user_id, entries });
     },
 
     // 打刻

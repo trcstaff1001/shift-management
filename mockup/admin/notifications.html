@@ -138,58 +138,33 @@
   </div>
 
   <script>
-    // ===== モックデータ（3チャネル） =====
-    const notifications = [
-      { id: 142, ts: '2026-04-27 10:30:12', uid: 10001, name: '田中 太郎', type: 'シフト確定通知',
-        msg: '5月のシフトが確定しました（15日）',
-        email: 'tanaka@example.com',    mail_status: 'success', mail_error: null,
-        cw_status: 'success', cw_message_id: '100001', cw_error: null, is_read: true },
+    // ===== 通知データ（API から読み込み後に格納） =====
+    let notifications = [];
 
-      { id: 141, ts: '2026-04-27 10:30:08', uid: 10002, name: '佐藤 次郎', type: 'シフト確定通知',
-        msg: '5月のシフトが確定しました（17日）',
-        email: 'sato@example.com',      mail_status: 'success', mail_error: null,
-        cw_status: 'success', cw_message_id: '100002', cw_error: null, is_read: false },
-
-      { id: 140, ts: '2026-04-27 10:30:05', uid: 10006, name: '渡辺 健太', type: 'シフト確定通知',
-        msg: '5月のシフトが確定しました（18日）',
-        email: 'watanabe_e7@local',     mail_status: 'skipped', mail_error: null,
-        cw_status: 'no_room', cw_message_id: null, cw_error: null, is_read: false },
-
-      { id: 139, ts: '2026-04-26 09:15:42', uid: 10003, name: '鈴木 三郎', type: '空き枠通知',
-        msg: '4/27 に空きが出ました',
-        email: 'suzuki@example.com',    mail_status: 'failed',  mail_error: 'Mailbox full',
-        cw_status: 'no_room', cw_message_id: null, cw_error: null, is_read: false },
-
-      { id: 138, ts: '2026-04-26 09:15:40', uid: 10004, name: '高橋 花子', type: '空き枠通知',
-        msg: '4/27 に空きが出ました',
-        email: 'takahashi@example.com', mail_status: 'success', mail_error: null,
-        cw_status: 'failed',  cw_message_id: null, cw_error: 'HTTP 429: Rate limit exceeded', is_read: false },
-
-      { id: 137, ts: '2026-04-25 14:20:30', uid: 10010, name: '加藤 結衣', type: 'その他',
-        msg: 'パスワード再設定リンクを送信しました',
-        email: 'kato@example.com',      mail_status: 'success', mail_error: null,
-        cw_status: 'success', cw_message_id: '100010', cw_error: null, is_read: true },
-
-      { id: 136, ts: '2026-04-24 11:45:00', uid: 10009, name: '小林 海斗', type: 'その他',
-        msg: '5月のシフト希望が未提出です（締切 4/30）',
-        email: 'kobayashi@example.com', mail_status: 'success', mail_error: null,
-        cw_status: 'no_room', cw_message_id: null, cw_error: null, is_read: false },
-
-      { id: 135, ts: '2026-04-24 11:45:00', uid: 10003, name: '鈴木 三郎', type: 'その他',
-        msg: '5月のシフト希望が未提出です（締切 4/30）',
-        email: 'suzuki@example.com',    mail_status: 'success', mail_error: null,
-        cw_status: 'no_room', cw_message_id: null, cw_error: null, is_read: false },
-
-      { id: 134, ts: '2026-04-22 09:00:15', uid: 10011, name: '吉田 翔', type: 'その他',
-        msg: '招待メールを送信しました（仮パスワード発行）',
-        email: 'yoshida_invalid@example.com', mail_status: 'failed', mail_error: 'Address not found',
-        cw_status: 'no_room', cw_message_id: null, cw_error: null, is_read: false },
-
-      { id: 133, ts: '2026-04-22 08:00:00', uid: 10007, name: '山本 直樹', type: 'シフト確定通知',
-        msg: '5月のシフトが確定しました（14日）',
-        email: 'yamamoto@example.com',  mail_status: 'success', mail_error: null,
-        cw_status: 'success', cw_message_id: '100007', cw_error: null, is_read: true },
-    ];
+    // GAS の生フィールドを画面用に正規化
+    function normalizeNotif(raw) {
+      const email = String(raw.email || '');
+      // mail_error 列はスキーマに存在しない。mail_sent_at の有無で判定。
+      const mailStatus = raw.mail_sent_at ? 'success'
+        : email.endsWith('@local') ? 'skipped' : 'failed';
+      const cwStatus = raw.chatwork_sent_at ? 'success'
+        : raw.chatwork_error ? 'failed' : 'no_room';
+      return {
+        id:            Number(raw.notification_id),
+        ts:            String(raw.created_at || ''),
+        uid:           Number(raw.user_id),
+        name:          raw.name    || '—',
+        email:         email,
+        type:          raw.type    || 'その他',
+        msg:           raw.message || '',
+        mail_status:   mailStatus,
+        mail_error:    null,
+        cw_status:     cwStatus,
+        cw_message_id: raw.chatwork_message_id || null,
+        cw_error:      raw.chatwork_error      || null,
+        is_read:       String(raw.is_read).toUpperCase() === 'TRUE',
+      };
+    }
 
     // ===== チャネル pill =====
     function mailPill(n) {
@@ -321,7 +296,7 @@
       n.ts          = new Date().toISOString().replace('T', ' ').slice(0, 19);
       updateKpi();
       render();
-      alert('メールを再送信しました（モック）');
+      alert('メールを再送信しました');
     }
 
     function resendCW(id) {
@@ -334,12 +309,20 @@
       n.ts            = new Date().toISOString().replace('T', ' ').slice(0, 19);
       updateKpi();
       render();
-      alert('ChatWork 通知を再送信しました（モック）');
+      alert('ChatWork 通知を再送信しました');
     }
 
     // ===== 起動 =====
-    updateKpi();
-    render();
+    (async function loadData() {
+      try {
+        const raw = await ShiftAdminAPI.listNotifications();
+        notifications = raw.map(normalizeNotif);
+      } catch (e) {
+        console.error('通知一覧の読み込みに失敗:', e);
+      }
+      updateKpi();
+      render();
+    })();
   </script>
 </body>
 </html>

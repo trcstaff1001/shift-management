@@ -177,7 +177,7 @@
     document.getElementById('todayAttLabel').textContent = today + 'の通所予定者の状況';
 
     // ===== KPI: 利用者数・提出状況 =====
-    const CURRENT_MONTH = '2026-05'; // モック対象月
+    const CURRENT_MONTH = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
     (async function loadKpi() {
       try {
         const [users, requests] = await Promise.all([

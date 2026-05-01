@@ -221,11 +221,12 @@
   </div>
 
   <script>
-    const YEAR = 2026;
-    const MONTH = 5;
-    const DAYS_IN_MONTH = 31;
+    const _now = new Date();
+    const YEAR = _now.getFullYear();
+    const MONTH = _now.getMonth() + 1;
+    const DAYS_IN_MONTH = new Date(YEAR, MONTH, 0).getDate();
     const FIRST_DOW = new Date(YEAR, MONTH - 1, 1).getDay();
-    const TODAY = 12; // モック: 5/12 を「今日」扱い
+    const TODAY = _now.getDate();
     const TODAY_DATE = YEAR + '-' + String(MONTH).padStart(2, '0') + '-' + String(TODAY).padStart(2, '0');
     const DOW_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
 
@@ -233,7 +234,6 @@
     for (let d = 1; d <= DAYS_IN_MONTH; d++) {
       if (new Date(YEAR, MONTH - 1, d).getDay() === 0) closedDates.add(d);
     }
-    [3, 4, 5, 6].forEach(d => closedDates.add(d));
 
     let confirmedDates = new Set();
     const externalDates = new Set();
@@ -297,13 +297,6 @@
       } catch (err) {
         if (err.message !== 'NO_SESSION') {
           console.error(err);
-          if (ShiftAPI.isMockMode()) {
-            confirmedDates = new Set([1, 2, 7, 8, 9, 12, 13, 14, 15, 19, 20, 21]);
-            externalDates.add(15);
-            requestedDates = new Set([22, 26, 27, 28]);
-            render();
-            updateSummary();
-          }
         }
       }
     })();

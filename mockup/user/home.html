@@ -103,7 +103,7 @@
           <a class="action-link" href="request.html">
             <div>
               <strong>シフト希望を出す</strong>
-              <span>5月分（締切: 4/15）</span>
+              <span id="requestLead">読み込み中…</span>
             </div>
           </a>
         </li>
@@ -144,6 +144,8 @@
 
   <script>
     ShiftAPI.requireSession();
+    // 管理者によるカテゴリ変更を反映するためセッションをバックグラウンド更新
+    ShiftAPI.refreshSession().catch(() => {});
     const session = ShiftAPI.getSession();
 
     // ユーザー情報表示
@@ -153,6 +155,12 @@
     const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
     document.getElementById('userMeta').textContent =
       'カテゴリ: ' + displayCategory + ' / 今月の利用上限: ' + (daysInMonth - 8) + '日';
+
+    // シフト希望リンクの動的テキスト（翌月分・締切15日）
+    const nextMonth = today.getMonth() === 11
+      ? new Date(today.getFullYear() + 1, 0) : new Date(today.getFullYear(), today.getMonth() + 1);
+    document.getElementById('requestLead').textContent =
+      (nextMonth.getMonth() + 1) + '月分（締切: ' + today.getMonth() + 1 + '/15）';
 
     // ログアウト
     document.getElementById('logoutLink').addEventListener('click', e => {
@@ -176,8 +184,7 @@
     })();
 
     // ===== 今日のシフトカード =====
-    // モック「今日」= 2026-05-12。本番では実際の日付を使う
-    const TODAY_STR = ShiftAPI.isMockMode() ? '2026-05-12' : (function () {
+    const TODAY_STR = (function () {
       const d = new Date();
       return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
     })();

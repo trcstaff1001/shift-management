@@ -295,9 +295,15 @@
       btn.disabled    = true;
       btn.textContent = '保存中…';
       try {
-        await ShiftAdminAPI.updateChatworkRoomId(editingUser.id, roomId);
-        // ローカル状態を更新して即再描画
+        const cat = document.getElementById('editCategory').value;
+        await ShiftAdminAPI.updateUser({
+          user_id:          editingUser.id,
+          category:         cat,
+          chatwork_room_id: roomId,
+        });
+        editingUser.cat              = cat;
         editingUser.chatwork_room_id = roomId;
+        allUsers = await loadUsers();
         updateKpi();
         applyFilters();
         document.getElementById('editModal').classList.remove('is-open');
@@ -332,9 +338,25 @@
       const email = document.getElementById('inviteEmail').value.trim();
       const cat   = document.getElementById('inviteCat').value;
       if (!name || !email) { alert('名前とメールアドレスを入力してください'); return; }
-      await ShiftAdminAPI.inviteUser({ name, email, category: cat });
-      alert('招待メールを送信しました（モック）');
-      document.getElementById('inviteModal').classList.remove('is-open');
+      try {
+        const res = await ShiftAdminAPI.inviteUser({ name, email, category: cat });
+        const uid  = res.user ? res.user.user_id : '—';
+        const sent = res.mail_sent;
+        const tmp  = res.temp_password || '—';
+        const msg  = [
+          '招待完了',
+          '利用者ID: ' + uid,
+          '仮パスワード: ' + tmp,
+          sent ? 'メール: 送信済' : 'メール: 未送信（@local または送信失敗）',
+        ].join('\n');
+        alert(msg);
+        document.getElementById('inviteModal').classList.remove('is-open');
+        allUsers = await loadUsers();
+        updateKpi();
+        applyFilters();
+      } catch (err) {
+        alert('招待に失敗しました: ' + (err.message || 'エラー'));
+      }
     });
     document.getElementById('inviteDummyBtn').addEventListener('click', async () => {
       const name = document.getElementById('inviteName').value.trim();
@@ -342,9 +364,18 @@
       if (!name) { alert('名前を入力してください'); return; }
       const dummyEmail = name.replace(/\s/g, '').toLowerCase().slice(0, 6) + '_' +
         Math.random().toString(36).slice(2, 5) + '@local';
-      await ShiftAdminAPI.inviteUser({ name, email: dummyEmail, category: cat });
-      alert('ダミーID発行: ' + dummyEmail + '（モック）');
-      document.getElementById('inviteModal').classList.remove('is-open');
+      try {
+        const res = await ShiftAdminAPI.inviteUser({ name, email: dummyEmail, category: cat });
+        const uid = res.user ? res.user.user_id : '—';
+        const tmp = res.temp_password || '—';
+        alert('ID発行完了\n利用者ID: ' + uid + '\n仮パスワード: ' + tmp + '\nメール: ' + dummyEmail);
+        document.getElementById('inviteModal').classList.remove('is-open');
+        allUsers = await loadUsers();
+        updateKpi();
+        applyFilters();
+      } catch (err) {
+        alert('発行に失敗しました: ' + (err.message || 'エラー'));
+      }
     });
 
     // ===== フィルター =====

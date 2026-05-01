@@ -38,7 +38,15 @@ function readTable(tableName) {
     .filter(row => row.some(v => v !== '' && v !== null))
     .map(row => {
       const obj = {};
-      headers.forEach((h, i) => { obj[h] = row[i]; });
+      headers.forEach((h, i) => {
+        const v = row[i];
+        if (v instanceof Date) {
+          const fmt = h.endsWith('_at') ? 'yyyy-MM-dd HH:mm:ss' : 'yyyy-MM-dd';
+          obj[h] = Utilities.formatDate(v, 'Asia/Tokyo', fmt);
+        } else {
+          obj[h] = v;
+        }
+      });
       return obj;
     });
 }

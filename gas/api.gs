@@ -342,10 +342,51 @@ function handleShiftConfirmedCreate(params, payload) {
     ...r, confirmed_at: nowJst(),
   }));
 
+  // ShiftRequests.status を一括更新（提出済→承認/不承認）
+  // payload.records 全体（既存スキップ分含む）を承認済みキーとして使う
+  if (payload.year_month) {
+    const confirmedKeys = new Set(records.map(r => String(r.user_id) + '_' + String(r.date)));
+    _batchUpdateShiftRequestsStatus(payload.year_month, confirmedKeys);
+  }
+
   // 通知配信（確定した利用者ごとに1件のNotificationを作成→ChatWork + メール）
   const notificationResult = _dispatchConfirmedNotifications(created, payload.year_month);
 
   return jsonResponse({ data: { created, skipped, notifications: notificationResult } });
+}
+
+/**
+ * ShiftRequests の status を月単位で一括更新。
+ * 提出済のみ対象: confirmedKeys に含まれれば '承認'、なければ '不承認'。
+ * 既に承認/不承認になっている行は変更しない。
+ * シートを1回読み書きするため N 件でもタイムアウトしない。
+ */
+function _batchUpdateShiftRequestsStatus(yearMonth, confirmedKeys) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('ShiftRequests');
+  if (!sheet || sheet.getLastRow() < 2) return;
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  const data    = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  const headers = data[0];
+  const uidIdx    = headers.indexOf('user_id');
+  const dateIdx   = headers.indexOf('date');
+  const statusIdx = headers.indexOf('status');
+  const updIdx    = headers.indexOf('updated_at');
+  if (uidIdx < 0 || dateIdx < 0 || statusIdx < 0) return;
+
+  const now = nowJst();
+  let changed = false;
+  for (let i = 1; i < data.length; i++) {
+    const date = String(data[i][dateIdx] || '');
+    if (!date.startsWith(yearMonth)) continue;
+    if (String(data[i][statusIdx]) !== '提出済') continue;
+    const key       = String(data[i][uidIdx]) + '_' + date;
+    const newStatus = confirmedKeys.has(key) ? '承認' : '不承認';
+    data[i][statusIdx] = newStatus;
+    if (updIdx >= 0) data[i][updIdx] = now;
+    changed = true;
+  }
+  if (changed) sheet.getRange(1, 1, lastRow, lastCol).setValues(data);
 }
 
 /**

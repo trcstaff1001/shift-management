@@ -120,6 +120,8 @@
         return Promise.resolve({
           user: { user_id: 10001, name: '田中 太郎', category: '通所' },
         });
+      case 'auth.changePassword':
+        return Promise.resolve({ updated: true });
       case 'users.me':
         return Promise.resolve({ user_id: 10001, name: '田中 太郎', category: '通所', status: '利用中' });
       case 'users.list':
@@ -212,6 +214,10 @@
       const data = await callPost('auth.login', { user_id, password });
       setSession(data.user || data);
       return data.user || data;
+    },
+    async changePassword(current_password, new_password) {
+      const s = requireSession();
+      return callPost('auth.changePassword', { user_id: s.user_id, current_password, new_password });
     },
     logout() {
       clearSession();

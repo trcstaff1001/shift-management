@@ -24,6 +24,27 @@
     .legend-swatch.swatch-visit { background: #f59e0b; }
     .legend-visit { display: none; }
 
+    .cell.locked {
+      background: #e8f5e9;
+      color: #2e7d32;
+      cursor: default;
+      position: relative;
+    }
+    .cell.locked::after {
+      content: '✓';
+      font-size: 9px;
+      position: absolute;
+      bottom: 2px;
+      right: 2px;
+    }
+    .cell.approved {
+      background: #1565c0;
+      color: #fff;
+      cursor: default;
+    }
+    .legend-swatch.swatch-locked { background: #e8f5e9; border: 1px solid #2e7d32; }
+    .legend-swatch.swatch-approved { background: #1565c0; }
+
     .visit-panel {
       margin-top: 16px;
       padding: 14px 16px;
@@ -98,6 +119,8 @@
       <div class="legend">
         <span class="legend-item"><span class="legend-swatch swatch-selected"></span><span id="legendSelected">希望</span></span>
         <span class="legend-item legend-visit"><span class="legend-swatch swatch-visit"></span>通所（月一）</span>
+        <span class="legend-item"><span class="legend-swatch swatch-locked"></span>提出済（変更不可）</span>
+        <span class="legend-item"><span class="legend-swatch swatch-approved"></span>確定済</span>
         <span class="legend-item"><span class="legend-swatch swatch-closed"></span>閉所日</span>
       </div>
 
@@ -196,6 +219,7 @@
 
     // ===== サイクルロジック =====
     function cycleCell(day, cell) {
+      if (cell.classList.contains('locked') || cell.classList.contains('approved')) return;
       const cur = cellStates.get(day) || 'none';
       let next;
 
@@ -274,6 +298,27 @@
       bar.classList.toggle('over', total >= LIMIT);
       document.getElementById('submitBtn').disabled = total === 0;
     }
+
+    // ===== 既存提出済みデータを読み込んでロック =====
+    (async function loadExisting() {
+      try {
+        const mm   = String(MONTH).padStart(2, '0');
+        const rows = await ShiftAPI.listMyShiftRequests(YEAR + '-' + mm);
+        rows.forEach(row => {
+          const day = Number(String(row.date).split('-')[2]);
+          if (!day) return;
+          const cell = cal.querySelector('[data-day="' + day + '"]');
+          if (!cell || cell.classList.contains('closed')) return;
+          if (row.status === '承認') {
+            cell.classList.remove('selected', 'visit');
+            cell.classList.add('approved');
+          } else if (row.status === '提出済') {
+            cell.classList.remove('selected', 'visit');
+            cell.classList.add('locked');
+          }
+        });
+      } catch (e) { /* ignore */ }
+    })();
 
     // ===== 提出 =====
     document.getElementById('submitBtn').addEventListener('click', () => {

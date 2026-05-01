@@ -40,6 +40,7 @@ const ROUTES = {
 
   // POST 系
   'auth.login':                    handleAuthLogin,
+  'auth.changePassword':           handleAuthChangePassword,
   'shiftRequests.create':          handleShiftRequestsCreate,
   'shiftRequests.delete':          handleShiftRequestsDelete,
   'shiftConfirmed.create':         handleShiftConfirmedCreate,
@@ -196,6 +197,23 @@ function handleAuthLogin(params, payload) {
     updateRow('Users', row => Number(row.user_id) === userId, { activated_at: nowJst() });
   }
   return jsonResponse({ data: { user: _stripPassword(user) } });
+}
+
+/**
+ * POST auth.changePassword
+ *   payload: { user_id, current_password, new_password }
+ */
+function handleAuthChangePassword(params, payload) {
+  const userId   = Number(payload.user_id);
+  const curPw    = String(payload.current_password || '');
+  const newPw    = String(payload.new_password     || '');
+  if (!userId || !curPw || !newPw) return errorResponse('user_id / current_password / new_password 必須', 'BAD_PAYLOAD');
+  if (newPw.length < 6) return errorResponse('新しいパスワードは6文字以上にしてください', 'INVALID_PASSWORD');
+  const user = readTable('Users').find(u => Number(u.user_id) === userId);
+  if (!user) return errorResponse('ユーザーが見つかりません', 'USER_NOT_FOUND');
+  if (!verifyPassword(curPw, user.password_hash)) return errorResponse('現在のパスワードが違います', 'AUTH_FAILED');
+  updateRow('Users', r => Number(r.user_id) === userId, { password_hash: hashPassword(newPw) });
+  return jsonResponse({ data: { updated: true } });
 }
 
 /**

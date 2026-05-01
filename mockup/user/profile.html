@@ -31,9 +31,23 @@
       </div>
 
       <div class="card">
-        <h3 class="card-title">パスワード</h3>
-        <p class="card-meta mb-3" style="margin-bottom: 16px;">最終変更: 2026年3月10日</p>
-        <a class="btn btn-secondary" href="#">パスワードを変更する</a>
+        <h3 class="card-title">パスワード変更</h3>
+        <form id="pwForm" style="margin-top: 12px;">
+          <div class="form-group">
+            <label for="pwCurrent">現在のパスワード</label>
+            <input id="pwCurrent" class="form-input" type="password" required />
+          </div>
+          <div class="form-group">
+            <label for="pwNew">新しいパスワード（6文字以上）</label>
+            <input id="pwNew" class="form-input" type="password" minlength="6" required />
+          </div>
+          <div class="form-group">
+            <label for="pwConfirm">新しいパスワード（確認）</label>
+            <input id="pwConfirm" class="form-input" type="password" minlength="6" required />
+          </div>
+          <p id="pwError" style="color:var(--danger);font-size:13px;display:none;margin:0 0 12px;"></p>
+          <button class="btn" id="pwBtn" type="submit">変更する</button>
+        </form>
       </div>
 
       <div class="btn-stack mt-4" style="margin-top: 24px;">
@@ -77,6 +91,33 @@
 
     document.getElementById('logoutBtn').addEventListener('click', () => {
       if (confirm('ログアウトしますか？')) ShiftAPI.logout();
+    });
+
+    document.getElementById('pwForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const cur    = document.getElementById('pwCurrent').value;
+      const nw     = document.getElementById('pwNew').value;
+      const conf   = document.getElementById('pwConfirm').value;
+      const errEl  = document.getElementById('pwError');
+      errEl.style.display = 'none';
+
+      if (nw !== conf) {
+        errEl.textContent = '新しいパスワードが一致しません';
+        errEl.style.display = 'block';
+        return;
+      }
+      const btn = document.getElementById('pwBtn');
+      const restore = ShiftAPI.busyButton(btn, '変更中…');
+      try {
+        await ShiftAPI.changePassword(cur, nw);
+        alert('パスワードを変更しました');
+        document.getElementById('pwForm').reset();
+      } catch (err) {
+        errEl.textContent = err.message || 'エラーが発生しました';
+        errEl.style.display = 'block';
+      } finally {
+        restore();
+      }
     });
   </script>
 </body>

@@ -221,47 +221,53 @@
   </div>
 
   <script>
-    const _now = new Date();
-    const YEAR = _now.getFullYear();
-    const MONTH = _now.getMonth() + 1;
-    const DAYS_IN_MONTH = new Date(YEAR, MONTH, 0).getDate();
-    const FIRST_DOW = new Date(YEAR, MONTH - 1, 1).getDay();
-    const TODAY = _now.getDate();
-    const TODAY_DATE = YEAR + '-' + String(MONTH).padStart(2, '0') + '-' + String(TODAY).padStart(2, '0');
-    const DOW_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
+    const _now       = new Date();
+    const TODAY_YEAR  = _now.getFullYear();
+    const TODAY_MONTH = _now.getMonth() + 1;
+    const TODAY_DAY   = _now.getDate();
+    const TODAY_DATE  = TODAY_YEAR + '-' + String(TODAY_MONTH).padStart(2, '0') + '-' + String(TODAY_DAY).padStart(2, '0');
+    const DOW_NAMES   = ['日', '月', '火', '水', '木', '金', '土'];
 
-    const closedDates = new Set();
-    for (let d = 1; d <= DAYS_IN_MONTH; d++) {
-      if (new Date(YEAR, MONTH - 1, d).getDay() === 0) closedDates.add(d);
-    }
+    let viewYear  = TODAY_YEAR;
+    let viewMonth = TODAY_MONTH;
 
     let confirmedDates = new Set();
-    const externalDates = new Set();
     let requestedDates = new Set();
-    let rejectedDates = new Set();
-    let todayAtt = null; // { attendance_id, status, clock_in, clock_out }
+    let rejectedDates  = new Set();
+    let todayAtt = null;
 
     // ===== カレンダー描画 =====
     const cal = document.getElementById('calendar');
+
     function render() {
+      const days     = new Date(viewYear, viewMonth, 0).getDate();
+      const firstDow = new Date(viewYear, viewMonth - 1, 1).getDay();
+      const isCurrentMonth = viewYear === TODAY_YEAR && viewMonth === TODAY_MONTH;
+
+      document.querySelector('.calendar-nav .month').textContent = viewYear + '年 ' + viewMonth + '月';
+
+      const btnPrev = document.querySelector('[aria-label="前月"]');
+      const btnNext = document.querySelector('[aria-label="次月"]');
+      const viewDate = new Date(viewYear, viewMonth - 1, 1);
+      btnPrev.disabled = viewDate <= new Date(TODAY_YEAR, TODAY_MONTH - 4, 1);
+      btnNext.disabled = viewDate >= new Date(TODAY_YEAR, TODAY_MONTH + 2, 1);
+
       Array.from(cal.querySelectorAll('.cell')).forEach(n => n.remove());
-      for (let i = 0; i < FIRST_DOW; i++) {
+      for (let i = 0; i < firstDow; i++) {
         const empty = document.createElement('div');
         empty.className = 'cell empty';
         cal.appendChild(empty);
       }
-      for (let d = 1; d <= DAYS_IN_MONTH; d++) {
+      for (let d = 1; d <= days; d++) {
         const cell = document.createElement('div');
         cell.className = 'cell';
         cell.textContent = d;
-        if (closedDates.has(d))         cell.classList.add('closed');
-        else if (confirmedDates.has(d)) {
-          cell.classList.add('confirmed');
-          if (externalDates.has(d))     cell.classList.add('external');
-        }
+        const isSun = new Date(viewYear, viewMonth - 1, d).getDay() === 0;
+        if (isSun)                      cell.classList.add('closed');
+        else if (confirmedDates.has(d)) cell.classList.add('confirmed');
         else if (requestedDates.has(d)) cell.classList.add('requested');
         else if (rejectedDates.has(d))  cell.classList.add('rejected');
-        if (d === TODAY) cell.classList.add('today');
+        if (isCurrentMonth && d === TODAY_DAY) cell.classList.add('today');
         cal.appendChild(cell);
       }
       renderClockCard();
@@ -275,17 +281,32 @@
         '希望（未確定）: <strong>' + requestedDates.size + '日</strong>';
     }
 
+    // ===== 月移動 =====
+    function changeMonth(delta) {
+      viewMonth += delta;
+      if (viewMonth > 12) { viewMonth = 1;  viewYear++; }
+      if (viewMonth < 1)  { viewMonth = 12; viewYear--; }
+      confirmedDates = new Set();
+      requestedDates = new Set();
+      rejectedDates  = new Set();
+      render();
+      updateSummary();
+      loadShifts();
+    }
+    document.querySelector('[aria-label="前月"]').addEventListener('click', () => changeMonth(-1));
+    document.querySelector('[aria-label="次月"]').addEventListener('click', () => changeMonth(1));
+
     // ===== API: シフト読み込み =====
     ShiftAPI.requireSession();
-    (async function loadShifts() {
+    async function loadShifts() {
+      const monthStr = viewYear + '-' + String(viewMonth).padStart(2, '0');
       try {
-        const month = YEAR + '-' + String(MONTH).padStart(2, '0');
-        const rows = await ShiftAPI.listMyShiftRequests(month);
+        const rows = await ShiftAPI.listMyShiftRequests(monthStr);
         const c = new Set(), r = new Set(), j = new Set();
         rows.forEach(row => {
           const day = Number(String(row.date).split('-')[2]);
           if (!day) return;
-          if (row.status === '承認')   c.add(day);
+          if (row.status === '承認')        c.add(day);
           else if (row.status === '提出済') r.add(day);
           else if (row.status === '不承認') j.add(day);
         });
@@ -295,11 +316,10 @@
         render();
         updateSummary();
       } catch (err) {
-        if (err.message !== 'NO_SESSION') {
-          console.error(err);
-        }
+        if (err.message !== 'NO_SESSION') console.error(err);
       }
-    })();
+    }
+    loadShifts();
 
     // ===== 打刻カード =====
     function formatClockTime(t) {
@@ -315,13 +335,14 @@
       const doneEl  = document.getElementById('clockDone');
       const actEl   = document.getElementById('clockActions');
 
-      if (TODAY <= 0 || !confirmedDates.has(TODAY)) {
+      const isCurrentMonth = viewYear === TODAY_YEAR && viewMonth === TODAY_MONTH;
+      if (!isCurrentMonth || !confirmedDates.has(TODAY_DAY)) {
         card.style.display = 'none';
         return;
       }
 
-      const dow = DOW_NAMES[new Date(YEAR, MONTH - 1, TODAY).getDay()];
-      dateEl.textContent = MONTH + '月' + TODAY + '日（' + dow + '）今日は通所日です';
+      const dow = DOW_NAMES[new Date(TODAY_YEAR, TODAY_MONTH - 1, TODAY_DAY).getDay()];
+      dateEl.textContent = TODAY_MONTH + '月' + TODAY_DAY + '日（' + dow + '）今日は通所日です';
       card.style.display = '';
 
       const ci = todayAtt && todayAtt.clock_in  ? formatClockTime(todayAtt.clock_in)  : null;

@@ -198,10 +198,85 @@
         const entries = (args && args.entries) || [];
         return Promise.resolve({ created: entries.length, skipped: 0 });
       }
-      case 'shiftConfirmed.list':
-        return Promise.resolve([]);
-      case 'attendances.list':
-        return Promise.resolve([]);
+      case 'shiftConfirmed.list': {
+        const month = (args && args.month) || '2026-05';
+        const [ry, rm] = month.split('-').map(Number);
+        const days = new Date(ry, rm, 0).getDate();
+        const closedDays = new Set();
+        for (let d = 1; d <= days; d++) {
+          if (new Date(ry, rm - 1, d).getDay() === 0) closedDays.add(d);
+        }
+        if (ry === 2026 && rm === 5) [3, 4, 5, 6].forEach(d => closedDays.add(d));
+        const rows = [];
+        MOCK_USERS.filter(u => u.status === '利用中').forEach(u => {
+          for (let d = 1; d <= days; d++) {
+            if (closedDays.has(d)) continue;
+            const seed = (u.user_id * 31 + d * 7) % 13;
+            if (seed < 8) {
+              rows.push({
+                confirmed_id:         rows.length + 1,
+                user_id:              u.user_id,
+                date:                 ry + '-' + String(rm).padStart(2, '0') + '-' + String(d).padStart(2, '0'),
+                is_facility_external: 'FALSE',
+                source:               '通常確定',
+              });
+            }
+          }
+        });
+        return Promise.resolve(rows);
+      }
+      case 'attendances.list': {
+        const month = (args && args.month) || '';
+        const date  = (args && args.date)  || '';
+        if (!month && !date) return Promise.resolve([]);
+        const filterDate = date || null;
+        const filterMonth = month || null;
+        const rows = [];
+        MOCK_USERS.filter(u => u.status === '利用中').slice(0, 8).forEach((u, i) => {
+          const targetDate = filterDate || (filterMonth + '-15');
+          const seed = (u.user_id + i) % 4;
+          let status, clock_in = '', clock_out = '';
+          if (seed === 0) { status = '出勤';   clock_in = '09:05'; clock_out = '13:30'; }
+          else if (seed === 1) { status = '出勤';   clock_in = '08:55'; }
+          else if (seed === 2) { status = '欠勤'; }
+          else { status = '未確定'; }
+          rows.push({
+            attendance_id: rows.length + 1,
+            user_id:       u.user_id,
+            date:          targetDate,
+            status, clock_in, clock_out,
+            source:        seed === 3 ? '' : 'admin_record',
+          });
+        });
+        return Promise.resolve(rows);
+      }
+      case 'businessDays.list': {
+        const month = (args && args.month) || '';
+        if (!month) return Promise.resolve([]);
+        const [ry, rm] = month.split('-').map(Number);
+        const days = new Date(ry, rm, 0).getDate();
+        const dowJp = ['日', '月', '火', '水', '木', '金', '土'];
+        const rows = [];
+        for (let d = 1; d <= days; d++) {
+          const dt = new Date(ry, rm - 1, d);
+          const dateStr = ry + '-' + String(rm).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+          rows.push({
+            date:        dateStr,
+            is_open:     dt.getDay() === 0 ? 'FALSE' : 'TRUE',
+            day_of_week: dowJp[dt.getDay()],
+            note:        dt.getDay() === 0 ? '日曜' : '',
+          });
+        }
+        return Promise.resolve(rows);
+      }
+      case 'businessDays.update': {
+        const records = (args && args.records) || [];
+        return Promise.resolve({ updated: records.length, added: 0 });
+      }
+      case 'attendances.create': {
+        const records = (args && args.records) || [];
+        return Promise.resolve({ created: records, updated: [] });
+      }
       case 'shiftConfirmed.create': {
         const records = (args && args.records) || [];
         return Promise.resolve({ created: records.length, skipped: 0, notifications_sent: records.length });
@@ -245,6 +320,11 @@
 
     // 出退勤
     listAttendances:      (params)  => callGet('attendances.list', params || {}),
+    recordAttendance:     (records) => callPost('attendances.create', { records }),
+
+    // 営業日カレンダー
+    listBusinessDays:     (month)   => callGet('businessDays.list', month ? { month } : {}),
+    updateBusinessDays:   (records) => callPost('businessDays.update', { records }),
 
     // エクスポート
     exportSpreadsheet: (year_month)   => callPost('exports.spreadsheet', { year_month }),

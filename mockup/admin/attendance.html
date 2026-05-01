@@ -63,7 +63,7 @@
           <li><a href="login.html">ログアウト</a></li>
         </ul>
       </nav>
-      <div class="sidebar-foot">ver 0.2 (mock)</div>
+      <div class="sidebar-foot">ver 0.3</div>
     </aside>
 
     <div class="main">
@@ -118,16 +118,14 @@
         </div>
 
         <div class="card">
-          <h2 class="card-title">最近の欠勤連絡</h2>
+          <h2 class="card-title">直近の欠勤記録（同月）</h2>
           <div class="table-wrap" style="margin-bottom: 0;">
             <table class="table">
               <thead>
-                <tr><th>日付</th><th>利用者</th><th>連絡経路</th><th>備考</th></tr>
+                <tr><th>日付</th><th>利用者</th><th>備考</th></tr>
               </thead>
-              <tbody>
-                <tr><td>4/27 09:12</td><td>佐藤 次郎</td><td><span class="pill muted">電話</span></td><td>体調不良</td></tr>
-                <tr><td>4/27 08:45</td><td>鈴木 三郎</td><td><span class="pill muted">家族連絡</span></td><td>通院</td></tr>
-                <tr><td>4/26 09:30</td><td>渡辺 健太</td><td><span class="pill muted">電話</span></td><td>—</td></tr>
+              <tbody id="recentAbsentTbody">
+                <tr><td colspan="3" class="text-muted text-center">読み込み中…</td></tr>
               </tbody>
             </table>
           </div>
@@ -138,8 +136,14 @@
 
   <script>
     // ========== 状態 ==========
-    let target = getDateFromHash() || '2026-04-27';
-    let todayUsers = []; // { id, name, cat, state, clock_in, clock_out }
+    function todayStr() {
+      const d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+    let target     = getDateFromHash() || todayStr();
+    let allUsers   = [];     // 利用者マスタ（user_id → user）
+    let userById   = new Map();
+    let todayUsers = [];     // 当日の予定者 [{ user_id, name, category, state, clock_in, clock_out }]
 
     function getDateFromHash() {
       const m = location.hash.match(/date=(\d{4}-\d{2}-\d{2})/);
@@ -156,49 +160,83 @@
 
     function fmtClock(t) {
       if (!t) return null;
-      const m = t.match(/(\d{2}):(\d{2})/);
-      return m ? m[1] + ':' + m[2] : t;
+      const m = String(t).match(/(\d{2}):(\d{2})/);
+      return m ? m[1] + ':' + m[2] : String(t);
     }
 
-    // ========== データ取得 ==========
-    function generateUsersForDate(dateStr) {
-      const [y, m, d] = dateStr.split('-').map(Number);
-      const seed = y + m * 100 + d * 7;
-      const allUsers = [
-        { id: 10001, name: '田中 太郎', cat: '通所' },
-        { id: 10002, name: '佐藤 次郎', cat: '通所' },
-        { id: 10003, name: '鈴木 三郎', cat: '在宅' },
-        { id: 10004, name: '高橋 花子', cat: '通所' },
-        { id: 10005, name: '伊藤 美咲', cat: '在宅(関東)' },
-        { id: 10006, name: '渡辺 健太', cat: '通所' },
-        { id: 10007, name: '山本 直樹', cat: '在宅通所' },
-        { id: 10008, name: '中村 さくら', cat: '通所' },
-        { id: 10009, name: '小林 海斗', cat: '通所' },
-        { id: 10010, name: '加藤 結衣', cat: '在宅' },
-      ];
-      const dt = new Date(y, m - 1, d);
-      if (dt.getDay() === 0) return [];
+    function statusFromGas(s) {
+      // GAS は '出勤' / '欠勤' / '未確定' を返す
+      if (s === '出勤') return 'present';
+      if (s === '欠勤') return 'absent';
+      return null;
+    }
+    function statusToGas(s) {
+      return s === 'present' ? '出勤' : (s === 'absent' ? '欠勤' : '');
+    }
 
-      const states = ['present', 'absent', null, 'present', 'present'];
-      return allUsers
-        .filter((_, i) => (seed * (i + 1)) % 5 !== 0)
-        .map((u, i) => {
-          const state = states[(seed + i) % states.length];
-          // モック打刻: state=present の一部に打刻時刻を付与
-          const hasClock = state === 'present' && (seed + i) % 3 !== 0;
+    // ========== ロード ==========
+    async function loadUsersOnce() {
+      if (allUsers.length > 0) return;
+      try {
+        allUsers = await ShiftAdminAPI.listUsers('利用中');
+        userById = new Map(allUsers.map(u => [Number(u.user_id), u]));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function loadData(dateStr) {
+      await loadUsersOnce();
+      const month = dateStr.substring(0, 7);
+      try {
+        const [confirmedRows, attendanceRows] = await Promise.all([
+          ShiftAdminAPI.listShiftConfirmed({ month }),
+          ShiftAdminAPI.listAttendances({ month }),
+        ]);
+        // 当日の確定者
+        const confirmedToday = confirmedRows.filter(r => String(r.date) === dateStr);
+        const attMap = new Map();
+        attendanceRows.filter(r => String(r.date) === dateStr).forEach(a => attMap.set(Number(a.user_id), a));
+
+        todayUsers = confirmedToday.map(c => {
+          const uid = Number(c.user_id);
+          const u   = userById.get(uid) || { user_id: uid, name: '#' + uid, category: '—' };
+          const a   = attMap.get(uid);
           return {
-            ...u,
-            state,
-            clock_in:  hasClock ? '09:' + String(5 + ((seed + i) % 12)).padStart(2, '0') : null,
-            clock_out: hasClock && (seed + i) % 2 === 0 ? '13:' + String(0 + ((seed + i) % 20)).padStart(2, '0') : null,
+            user_id:   uid,
+            name:      u.name,
+            category:  u.category,
+            state:     a ? statusFromGas(a.status) : null,
+            clock_in:  a ? a.clock_in  : '',
+            clock_out: a ? a.clock_out : '',
+            is_external: String(c.is_facility_external) === 'TRUE',
           };
         });
+
+        renderRecentAbsent(attendanceRows);
+      } catch (e) {
+        console.error(e);
+        todayUsers = [];
+      }
+      render();
     }
 
-    // データ取得（モック）。将来 ShiftAdminAPI.listAttendances(target) に差し替え
-    function loadData(dateStr) {
-      todayUsers = generateUsersForDate(dateStr);
-      render();
+    function renderRecentAbsent(rows) {
+      const tbody = document.getElementById('recentAbsentTbody');
+      const absents = rows
+        .filter(r => r.status === '欠勤')
+        .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+        .slice(0, 10);
+      if (absents.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-muted text-center">同月の欠勤記録はありません</td></tr>';
+        return;
+      }
+      tbody.innerHTML = absents.map(r => {
+        const u = userById.get(Number(r.user_id));
+        const name = u ? u.name : '#' + r.user_id;
+        const note = r.note || '—';
+        return '<tr><td>' + r.date + '</td><td>' + name + '</td><td>' + note + '</td></tr>';
+      }).join('');
     }
 
     // ========== 描画 ==========
@@ -247,7 +285,7 @@
           '<div class="attendance-row">',
           '  <div class="attendance-name">',
           '    ' + u.name,
-          '    <span class="meta">#' + u.id + ' / ' + u.cat + '</span>',
+          '    <span class="meta">#' + u.user_id + ' / ' + u.category + (u.is_external ? ' / 施設外' : '') + '</span>',
           '  </div>',
           clockHtml,
           '  <div class="attendance-toggle" data-idx="' + i + '">',
@@ -262,8 +300,8 @@
         toggle.querySelectorAll('button').forEach(btn => {
           btn.addEventListener('click', () => {
             const idx = +toggle.dataset.idx;
-            todayUsers[idx].state = btn.dataset.state;
-            render();
+            const newState = btn.dataset.state;
+            saveAttendance(idx, newState);
           });
         });
       });
@@ -274,11 +312,31 @@
       const noClockList = document.getElementById('noClockList');
       if (noClock.length > 0) {
         noClockList.innerHTML = noClock.map(u =>
-          '<div class="no-att-item">・' + u.name + '（' + u.cat + '）</div>'
+          '<div class="no-att-item">・' + u.name + '（' + u.category + '）</div>'
         ).join('');
         noClockSec.style.display = '';
       } else {
         noClockSec.style.display = 'none';
+      }
+    }
+
+    // ========== 出欠記録の保存 ==========
+    async function saveAttendance(idx, newState) {
+      const u = todayUsers[idx];
+      if (!u) return;
+      const oldState = u.state;
+      u.state = newState; // 楽観的更新
+      render();
+      try {
+        await ShiftAdminAPI.recordAttendance([{
+          user_id: u.user_id,
+          date:    target,
+          status:  statusToGas(newState),
+        }]);
+      } catch (err) {
+        u.state = oldState;
+        render();
+        alert('保存に失敗しました: ' + (err.message || 'エラー'));
       }
     }
 
@@ -287,9 +345,8 @@
       btn.addEventListener('click', () => setDateHash(shiftDate(target, +btn.dataset.dir)));
     });
     document.getElementById('dateInput').addEventListener('change', e => setDateHash(e.target.value));
-    document.getElementById('todayBtn').addEventListener('click', () => {
-      setDateHash('2026-04-27'); // モック「今日」
-    });
+    document.getElementById('todayBtn').addEventListener('click', () => setDateHash(todayStr()));
+
     window.addEventListener('hashchange', () => {
       target = getDateFromHash() || target;
       loadData(target);

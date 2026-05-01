@@ -34,6 +34,7 @@ const ROUTES = {
   'shiftRequests.list':            handleShiftRequestsList,
   'shiftConfirmed.list':           handleShiftConfirmedList,
   'attendances.list':              handleAttendancesList,
+  'businessDays.list':             handleBusinessDaysList,
   'notifications.list':            handleNotificationsList,
   'notifications.listAll':         handleNotificationsListAll,
   'notifications.unreadCount':     handleNotificationsUnreadCount,
@@ -43,10 +44,12 @@ const ROUTES = {
   'auth.changePassword':           handleAuthChangePassword,
   'shiftRequests.create':          handleShiftRequestsCreate,
   'shiftRequests.delete':          handleShiftRequestsDelete,
+  'shiftRequests.applyVacancy':    handleShiftRequestsApplyVacancy,
   'shiftConfirmed.create':         handleShiftConfirmedCreate,
   'attendances.create':            handleAttendancesCreate,
   'attendances.clockIn':           handleAttendancesClockIn,
   'attendances.clockOut':          handleAttendancesClockOut,
+  'businessDays.update':           handleBusinessDaysUpdate,
   'notifications.markRead':        handleNotificationsMarkRead,
   'exports.spreadsheet':           handleExportsSpreadsheet,
   'users.invite':                  handleUsersInvite,
@@ -129,6 +132,14 @@ function handleAttendancesList(params) {
   let rows = readTable('Attendances');
   if (month)          rows = rows.filter(r => String(r.date).startsWith(month));
   if (userId != null) rows = rows.filter(r => Number(r.user_id) === userId);
+  return jsonResponse({ data: rows });
+}
+
+/** GET ?action=businessDays.list[&month=YYYY-MM] */
+function handleBusinessDaysList(params) {
+  const month = params.month || null;
+  let rows = readTable('BusinessDays');
+  if (month) rows = rows.filter(r => String(r.date).startsWith(month));
   return jsonResponse({ data: rows });
 }
 
@@ -387,6 +398,122 @@ function _batchUpdateShiftRequestsStatus(yearMonth, confirmedKeys) {
     changed = true;
   }
   if (changed) sheet.getRange(1, 1, lastRow, lastCol).setValues(data);
+}
+
+/**
+ * POST businessDays.update
+ *   payload: { records: [{ date: 'YYYY-MM-DD', is_open: bool, note?: string }] }
+ *   既存日付は更新、未登録日付は追加。シート1回読み書きでバッチ実行。
+ */
+function handleBusinessDaysUpdate(params, payload) {
+  const records = Array.isArray(payload.records) ? payload.records : [];
+  if (records.length === 0) return errorResponse('records 必須', 'BAD_PAYLOAD');
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('BusinessDays');
+  if (!sheet) return errorResponse('BusinessDays タブがありません', 'NO_TABLE');
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const lastRow = sheet.getLastRow();
+    const lastCol = sheet.getLastColumn();
+    if (lastRow < 1) return errorResponse('BusinessDays が空です', 'EMPTY_TABLE');
+
+    const data    = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+    const headers = data[0];
+    const dateIdx = headers.indexOf('date');
+    const openIdx = headers.indexOf('is_open');
+    const dowIdx  = headers.indexOf('day_of_week');
+    const noteIdx = headers.indexOf('note');
+    if (dateIdx < 0 || openIdx < 0) return errorResponse('カラム不正', 'BAD_SCHEMA');
+
+    const dateToRow = new Map();
+    for (let i = 1; i < data.length; i++) dateToRow.set(String(data[i][dateIdx]), i);
+
+    const dowJp   = ['日', '月', '火', '水', '木', '金', '土'];
+    const newRows = [];
+
+    for (const r of records) {
+      const date   = String(r.date);
+      const isOpen = r.is_open ? 'TRUE' : 'FALSE';
+      const note   = r.note != null ? String(r.note) : '';
+      if (dateToRow.has(date)) {
+        const i = dateToRow.get(date);
+        data[i][openIdx] = isOpen;
+        if (noteIdx >= 0 && r.note != null) data[i][noteIdx] = note;
+      } else {
+        const [y, m, d] = date.split('-').map(Number);
+        const dow = dowJp[new Date(y, m - 1, d).getDay()];
+        const newRow = headers.map(h => {
+          if (h === 'date')        return date;
+          if (h === 'is_open')     return isOpen;
+          if (h === 'day_of_week') return dow;
+          if (h === 'note')        return note;
+          return '';
+        });
+        newRows.push(newRow);
+      }
+    }
+
+    sheet.getRange(1, 1, lastRow, lastCol).setValues(data);
+    if (newRows.length > 0) {
+      sheet.getRange(lastRow + 1, 1, newRows.length, lastCol).setValues(newRows);
+    }
+
+    return jsonResponse({ data: { updated: records.length, added: newRows.length } });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * POST shiftRequests.applyVacancy（空き枠通知からの追加申し込み）
+ *   payload: { user_id, date }
+ *   - 既に確定済みならエラー
+ *   - 規定（1日制約・利用者上限・月間制約）を全てチェック
+ *   - 通れば ShiftConfirmed に追加 + ShiftRequests.status を '承認' に更新
+ */
+function handleShiftRequestsApplyVacancy(params, payload) {
+  const userId = Number(payload.user_id);
+  const date   = String(payload.date || '');
+  if (!userId || !date) return errorResponse('user_id / date 必須', 'BAD_PAYLOAD');
+
+  const config       = getConfig();
+  const existing     = readTable('ShiftConfirmed');
+  const businessDays = readTable('BusinessDays');
+
+  if (existing.find(r => Number(r.user_id) === userId && String(r.date) === date)) {
+    return errorResponse('既に確定済みです', 'ALREADY_CONFIRMED');
+  }
+
+  const newRecord = {
+    user_id:              userId,
+    date:                 date,
+    is_facility_external: 'FALSE',
+    source:               '追加確定',
+    confirmed_by:         '',
+  };
+  const merged = existing.concat([newRecord]);
+
+  const dailyCheck = checkDailyConstraint(date, merged, config);
+  if (!dailyCheck.ok) return errorResponse(dailyCheck.reason, 'RULE_DAILY');
+
+  const month = date.substring(0, 7);
+  const userMonthlyCheck = checkUserMonthlyLimit(userId, month, merged, config);
+  if (!userMonthlyCheck.ok) return errorResponse(userMonthlyCheck.reason, 'RULE_USER_MONTHLY');
+
+  const monthlyCheck = checkMonthlyConstraint(month, merged, businessDays, config);
+  if (!monthlyCheck.ok) return errorResponse(monthlyCheck.reason, 'RULE_MONTHLY');
+
+  const created = appendRow('ShiftConfirmed', { ...newRecord, confirmed_at: nowJst() });
+
+  // 該当 ShiftRequests を '承認' に更新
+  updateRow('ShiftRequests',
+    row => Number(row.user_id) === userId && String(row.date) === date,
+    { status: '承認' }
+  );
+
+  return jsonResponse({ data: { confirmed: created } });
 }
 
 /**

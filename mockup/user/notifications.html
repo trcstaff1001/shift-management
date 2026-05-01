@@ -43,10 +43,27 @@
       if (n.type === 'シフト確定通知') {
         return '<div class="notif-action"><a class="btn btn-secondary" href="calendar.html">確定シフトを見る</a></div>';
       }
-      if (n.type === '空き枠通知') {
-        return '<div class="notif-action"><a class="btn btn-secondary" href="request.html">希望を出す</a></div>';
+      if (n.type === '空き枠通知' && n.target_date) {
+        return '<div class="notif-action">'
+          + '<button class="btn" data-vacancy-date="' + n.target_date + '">この日に申し込む</button>'
+          + '<span class="vacancy-status text-sm text-muted" style="margin-left:8px;"></span>'
+          + '</div>';
       }
       return '';
+    }
+
+    async function applyVacancy(btn, date) {
+      const status  = btn.parentElement.querySelector('.vacancy-status');
+      const restore = ShiftAPI.busyButton(btn, '申し込み中…');
+      try {
+        await ShiftAPI.applyVacancy(date);
+        btn.textContent  = '✓ 確定しました';
+        btn.disabled     = true;
+        if (status) status.textContent = date + ' の通所が確定';
+      } catch (err) {
+        restore();
+        if (status) status.textContent = '失敗: ' + (err.message || 'エラー');
+      }
     }
 
     function typeLabel(t) {
@@ -82,6 +99,11 @@
             '</li>',
           ].join('');
         }).join('');
+
+        // 「申し込む」ボタン bind
+        list.querySelectorAll('button[data-vacancy-date]').forEach(btn => {
+          btn.addEventListener('click', () => applyVacancy(btn, btn.dataset.vacancyDate));
+        });
 
         // ページを開いた時点で全件既読化
         if (unread.length > 0) {

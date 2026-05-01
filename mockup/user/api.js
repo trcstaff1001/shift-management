@@ -151,6 +151,8 @@
       }
       case 'shiftRequests.create':
         return Promise.resolve({ created: (args.entries || args.dates || []).length, skipped: 0 });
+      case 'shiftRequests.applyVacancy':
+        return Promise.resolve({ confirmed: { user_id: 10001, date: args.date } });
       case 'attendances.clockIn': {
         const date = (args && args.date) || _mockDate();
         const rec = { attendance_id: 9001, user_id: 10001, date, status: '未確定', clock_in: _mockNow(), clock_out: '', source: 'self_clock' };
@@ -253,6 +255,10 @@
     async submitShiftRequests(entries) {
       const s = requireSession();
       return callPost('shiftRequests.create', { user_id: s.user_id, entries });
+    },
+    async applyVacancy(date) {
+      const s = requireSession();
+      return callPost('shiftRequests.applyVacancy', { user_id: s.user_id, date });
     },
 
     // 打刻

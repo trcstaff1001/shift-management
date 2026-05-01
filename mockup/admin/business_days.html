@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>営業日カレンダー / シフト管理（管理）</title>
   <link rel="stylesheet" href="style.css" />
+  <script src="../../config.js"></script>
+  <script src="api.js"></script>
   <style>
     .bd-cal {
       display: grid;
@@ -70,7 +72,7 @@
           <li><a href="login.html">ログアウト</a></li>
         </ul>
       </nav>
-      <div class="sidebar-foot">ver 0.2 (mock)</div>
+      <div class="sidebar-foot">ver 0.3</div>
     </aside>
 
     <div class="main">
@@ -82,7 +84,7 @@
             <span class="month-nav-current" id="monthCurrent">—</span>
             <button class="month-nav-btn" data-dir="+1">→</button>
           </div>
-          <button class="btn btn-success" onclick="alert('保存しました（モック）')">保存</button>
+          <button class="btn btn-success" id="saveBtn" disabled>保存</button>
         </div>
       </header>
 
@@ -120,46 +122,58 @@
   </div>
 
   <script>
-    let target = getMonthFromHash();
-    // 月ごとの閉所セット（編集状態を月単位で保持）
-    const closedByMonth = {};
+    // ===== 状態 =====
+    let target           = getMonthFromHash();
+    let closed           = new Set();   // 当月の閉所日
+    let originalClosed   = new Set();   // ロード時の閉所日（差分検出用）
+    let knownDates       = new Set();   // GASにレコードがある日（追加 vs 更新の判定用）
+    let dirty            = false;
 
     function getMonthFromHash() {
       const m = location.hash.match(/month=(\d{4})-(\d{2})/);
       if (m) return { y: +m[1], m: +m[2] };
-      return { y: 2026, m: 5 };
+      const now = new Date();
+      return { y: now.getFullYear(), m: now.getMonth() + 1 };
     }
     function setMonthHash(y, m) { location.hash = `month=${y}-${String(m).padStart(2, '0')}`; }
-    function key(t) { return `${t.y}-${String(t.m).padStart(2,'0')}`; }
     function daysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
 
-    function defaultClosed(y, m) {
-      const closed = new Set();
-      const days = daysInMonth(y, m);
-      for (let d = 1; d <= days; d++) {
-        if (new Date(y, m - 1, d).getDay() === 0) closed.add(d);
-      }
-      // ダミー祝日
-      if (y === 2026 && m === 1) [1, 2, 3, 12].forEach(d => closed.add(d));
-      if (y === 2026 && m === 2) [11, 23].forEach(d => closed.add(d));
-      if (y === 2026 && m === 5) [3, 4, 5, 6].forEach(d => closed.add(d));
-      if (y === 2026 && m === 7) [20].forEach(d => closed.add(d));
-      if (y === 2026 && m === 11) [3, 23].forEach(d => closed.add(d));
-      return closed;
+    function dateStr(y, m, d) {
+      return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
     }
 
-    function getClosed() {
-      const k = key(target);
-      if (!(k in closedByMonth)) {
-        closedByMonth[k] = defaultClosed(target.y, target.m);
+    // ===== ロード =====
+    async function loadData() {
+      const { y, m } = target;
+      const monthStr = y + '-' + String(m).padStart(2, '0');
+      closed = new Set();
+      knownDates = new Set();
+      try {
+        const rows = await ShiftAdminAPI.listBusinessDays(monthStr);
+        rows.forEach(r => {
+          const d = Number(String(r.date).split('-')[2]);
+          if (!d) return;
+          knownDates.add(d);
+          if (String(r.is_open) !== 'TRUE' && r.is_open !== true) closed.add(d);
+        });
+      } catch (e) {
+        console.error(e);
+        // 取得失敗時は日曜のみ閉所として初期化
+        const days = daysInMonth(y, m);
+        for (let d = 1; d <= days; d++) {
+          if (new Date(y, m - 1, d).getDay() === 0) closed.add(d);
+        }
       }
-      return closedByMonth[k];
+      originalClosed = new Set(closed);
+      dirty = false;
+      updateSaveBtn();
+      render();
     }
 
+    // ===== 描画 =====
     function render() {
       const { y, m } = target;
-      const days = daysInMonth(y, m);
-      const closed = getClosed();
+      const days     = daysInMonth(y, m);
       const firstDow = new Date(y, m - 1, 1).getDay();
 
       document.getElementById('monthCurrent').textContent = `${y}年${m}月`;
@@ -187,28 +201,73 @@
         cell.addEventListener('click', () => {
           if (closed.has(d)) closed.delete(d);
           else closed.add(d);
+          recalcDirty();
           render();
         });
         cal.appendChild(cell);
       }
 
-      updateStats(y, m, days, closed);
+      updateStats(y, m, days);
     }
 
-    function updateStats(y, m, days, closed) {
+    function updateStats(y, m, days) {
       const closedCount = closed.size;
-      const openCount = days - closedCount;
-      const monthlyMax = openCount * 20 * 1.25;
-      const userLimit = days - 8;
-      document.getElementById('openCount').innerHTML = `${openCount}<span class="unit">日</span>`;
-      document.getElementById('closedCount').innerHTML = `${closedCount}<span class="unit">日</span>`;
-      document.getElementById('userLimit').innerHTML = `${userLimit}<span class="unit">日</span>`;
+      const openCount   = days - closedCount;
+      const monthlyMax  = openCount * 20 * 1.25;
+      const userLimit   = days - 8;
+      document.getElementById('openCount').innerHTML       = `${openCount}<span class="unit">日</span>`;
+      document.getElementById('closedCount').innerHTML     = `${closedCount}<span class="unit">日</span>`;
+      document.getElementById('userLimit').innerHTML       = `${userLimit}<span class="unit">日</span>`;
       document.getElementById('monthlyMaxLabel').textContent = monthlyMax;
       document.getElementById('userLimitMeta').textContent = `${y}年${m}月（${days}日）- 8 = ${userLimit}日（規定で固定）`;
     }
 
+    function recalcDirty() {
+      const same = closed.size === originalClosed.size && [...closed].every(d => originalClosed.has(d));
+      dirty = !same;
+      updateSaveBtn();
+    }
+
+    function updateSaveBtn() {
+      const btn = document.getElementById('saveBtn');
+      btn.disabled    = !dirty;
+      btn.textContent = dirty ? '保存（変更あり）' : '保存';
+    }
+
+    // ===== 保存 =====
+    document.getElementById('saveBtn').addEventListener('click', async () => {
+      if (!dirty) return;
+      const { y, m } = target;
+      const days     = daysInMonth(y, m);
+      // 差分のあった日のみ送信
+      const records = [];
+      for (let d = 1; d <= days; d++) {
+        const wasClosed = originalClosed.has(d);
+        const isClosed  = closed.has(d);
+        if (wasClosed !== isClosed) {
+          records.push({ date: dateStr(y, m, d), is_open: !isClosed });
+        }
+      }
+      if (records.length === 0) return;
+
+      const btn     = document.getElementById('saveBtn');
+      const restore = ShiftAdminAPI.busyButton(btn, '保存中…');
+      try {
+        await ShiftAdminAPI.updateBusinessDays(records);
+        alert(records.length + '日分の営業日設定を保存しました');
+        originalClosed = new Set(closed);
+        dirty = false;
+        updateSaveBtn();
+      } catch (err) {
+        alert('保存に失敗しました: ' + (err.message || 'エラー'));
+        restore();
+      }
+    });
+
+    // ===== 月切替 =====
     document.querySelectorAll('.month-nav-btn').forEach(btn => {
       btn.addEventListener('click', () => {
+        if (dirty && !confirm('未保存の変更があります。破棄して移動しますか？')) return;
         const dir = +btn.dataset.dir;
         let y = target.y, m = target.m + dir;
         if (m < 1) { m = 12; y--; } else if (m > 12) { m = 1; y++; }
@@ -218,10 +277,10 @@
 
     window.addEventListener('hashchange', () => {
       target = getMonthFromHash();
-      render();
+      loadData();
     });
 
-    render();
+    loadData();
   </script>
 </body>
 </html>

@@ -179,10 +179,13 @@
     document.getElementById('legendSelected').textContent = isZaitaku ? '在宅希望' : '通所希望';
     if (isZaitaku) document.querySelector('.legend-visit').style.display = '';
 
-    const deadline = new Date(YEAR, MONTH - 1, 15);
-    const daysLeft = Math.max(0, Math.ceil((deadline - now) / 86400000));
+    // 締切は「今月の15日」（翌月分の希望なので、提出は翌月始まる前まで）
+    const deadlineYear  = now.getFullYear();
+    const deadlineMonth = now.getMonth() + 1; // 1-indexed
+    const deadline      = new Date(deadlineYear, deadlineMonth - 1, 15);
+    const daysLeft      = Math.max(0, Math.ceil((deadline - now) / 86400000));
     document.getElementById('deadlineNotice').textContent =
-      '提出締切: ' + YEAR + '年' + MONTH + '月15日（あと' + daysLeft + '日）';
+      '提出締切: ' + deadlineYear + '年' + deadlineMonth + '月15日（あと' + daysLeft + '日）';
 
     // ===== 閉所日 =====
     const closedDates = new Set();

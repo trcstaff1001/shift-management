@@ -156,11 +156,13 @@
     document.getElementById('userMeta').textContent =
       'カテゴリ: ' + displayCategory + ' / 今月の利用上限: ' + (daysInMonth - 8) + '日';
 
-    // シフト希望リンクの動的テキスト（翌月分・締切15日）
+    // シフト希望リンクの動的テキスト（翌月分・締切は今月15日）
     const nextMonth = today.getMonth() === 11
       ? new Date(today.getFullYear() + 1, 0) : new Date(today.getFullYear(), today.getMonth() + 1);
+    const nextM = nextMonth.getMonth() + 1;
+    const curM  = today.getMonth() + 1;
     document.getElementById('requestLead').textContent =
-      (nextMonth.getMonth() + 1) + '月分（締切: ' + today.getMonth() + 1 + '/15）';
+      nextM + '月分（締切: ' + curM + '/15）';
 
     // ログアウト
     document.getElementById('logoutLink').addEventListener('click', e => {

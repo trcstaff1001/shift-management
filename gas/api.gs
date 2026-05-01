@@ -388,7 +388,7 @@ function _batchUpdateShiftRequestsStatus(yearMonth, confirmedKeys) {
   const now = nowJst();
   let changed = false;
   for (let i = 1; i < data.length; i++) {
-    const date = String(data[i][dateIdx] || '');
+    const date = _normalizeDate(data[i][dateIdx]);
     if (!date.startsWith(yearMonth)) continue;
     if (String(data[i][statusIdx]) !== '提出済') continue;
     const key       = String(data[i][uidIdx]) + '_' + date;
@@ -398,6 +398,12 @@ function _batchUpdateShiftRequestsStatus(yearMonth, confirmedKeys) {
     changed = true;
   }
   if (changed) sheet.getRange(1, 1, lastRow, lastCol).setValues(data);
+}
+
+/** Sheet から取得した値を 'YYYY-MM-DD' 文字列に正規化（Date型/文字列の両対応）。 */
+function _normalizeDate(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy-MM-dd');
+  return String(v || '');
 }
 
 /**
@@ -428,7 +434,7 @@ function handleBusinessDaysUpdate(params, payload) {
     if (dateIdx < 0 || openIdx < 0) return errorResponse('カラム不正', 'BAD_SCHEMA');
 
     const dateToRow = new Map();
-    for (let i = 1; i < data.length; i++) dateToRow.set(String(data[i][dateIdx]), i);
+    for (let i = 1; i < data.length; i++) dateToRow.set(_normalizeDate(data[i][dateIdx]), i);
 
     const dowJp   = ['日', '月', '火', '水', '木', '金', '土'];
     const newRows = [];

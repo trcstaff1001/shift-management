@@ -277,6 +277,8 @@
         const records = (args && args.records) || [];
         return Promise.resolve({ created: records, updated: [] });
       }
+      case 'attendances.delete':
+        return Promise.resolve({ deleted: 1 });
       case 'shiftConfirmed.create': {
         const records = (args && args.records) || [];
         return Promise.resolve({ created: records.length, skipped: 0, notifications_sent: records.length });
@@ -319,8 +321,9 @@
     listShiftConfirmed:   (params)  => callGet('shiftConfirmed.list', params || {}),
 
     // 出退勤
-    listAttendances:      (params)  => callGet('attendances.list', params || {}),
-    recordAttendance:     (records) => callPost('attendances.create', { records }),
+    listAttendances:      (params)         => callGet('attendances.list', params || {}),
+    recordAttendance:     (records)        => callPost('attendances.create', { records }),
+    deleteAttendance:     (user_id, date)  => callPost('attendances.delete', { user_id, date }),
 
     // 営業日カレンダー
     listBusinessDays:     (month)   => callGet('businessDays.list', month ? { month } : {}),

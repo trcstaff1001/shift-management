@@ -47,6 +47,7 @@ const ROUTES = {
   'shiftRequests.applyVacancy':    handleShiftRequestsApplyVacancy,
   'shiftConfirmed.create':         handleShiftConfirmedCreate,
   'attendances.create':            handleAttendancesCreate,
+  'attendances.delete':            handleAttendancesDelete,
   'attendances.clockIn':           handleAttendancesClockIn,
   'attendances.clockOut':          handleAttendancesClockOut,
   'businessDays.update':           handleBusinessDaysUpdate,
@@ -569,6 +570,46 @@ function handleAttendancesCreate(params, payload) {
   }
 
   return jsonResponse({ data: { created, updated } });
+}
+
+/**
+ * POST attendances.delete（管理者用：出欠記録の取消し）
+ *   payload: { user_id, date }
+ *   - 該当行をシートから削除（行ごと）。打刻記録もクリア。
+ */
+function handleAttendancesDelete(params, payload) {
+  const userId = Number(payload.user_id);
+  const date   = String(payload.date || '');
+  if (!userId || !date) return errorResponse('user_id / date 必須', 'BAD_PAYLOAD');
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Attendances');
+  if (!sheet) return errorResponse('Attendances タブがありません', 'NO_TABLE');
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return jsonResponse({ data: { deleted: 0 } });
+    const lastCol = sheet.getLastColumn();
+    const data    = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+    const headers = data[0];
+    const uidIdx  = headers.indexOf('user_id');
+    const dateIdx = headers.indexOf('date');
+    if (uidIdx < 0 || dateIdx < 0) return errorResponse('カラム不正', 'BAD_SCHEMA');
+
+    let deleted = 0;
+    // 後ろから削除（インデックスがズレないように）
+    for (let i = data.length - 1; i >= 1; i--) {
+      const rowDate = _normalizeDate(data[i][dateIdx]);
+      if (Number(data[i][uidIdx]) === userId && rowDate === date) {
+        sheet.deleteRow(i + 1);
+        deleted++;
+      }
+    }
+    return jsonResponse({ data: { deleted } });
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**

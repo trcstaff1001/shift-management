@@ -8,38 +8,112 @@
   <script src="../../config.js"></script>
   <script src="api.js"></script>
   <style>
-    .clock-time {
-      font-size: 12px;
-      color: #555;
+    /* ===== 行レイアウト ===== */
+    .att-row {
+      display: grid;
+      grid-template-columns: minmax(180px, 1.2fr) 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      background: #fff;
+      border: 1px solid #eaeaea;
+      transition: background 0.15s;
+    }
+    .att-row--present { background: #f1f8f4; border-color: #c8e6c9; }
+    .att-row--working { background: #fff;    border-color: #bbdefb; }
+    .att-row--pending { background: #fff8e1; border-color: #ffe082; }
+    .att-row--absent  { background: #fafafa; border-color: #e0e0e0; opacity: 0.85; }
+
+    .att-name {
+      font-weight: 600;
+      font-size: 14px;
+      color: #222;
+    }
+    .att-name .att-meta {
+      display: block;
+      margin-top: 2px;
+      font-size: 11px;
+      font-weight: 400;
+      color: #888;
+    }
+
+    /* ===== ステータス表示（中央） ===== */
+    .att-status {
+      display: flex;
+      align-items: center;
+      gap: 12px;
       font-variant-numeric: tabular-nums;
     }
-    .clock-time.missing { color: #bbb; font-style: italic; }
-    .attendance-row {
-      display: grid;
-      grid-template-columns: 1fr auto auto;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 0;
-      border-bottom: 1px solid #f0f0f0;
+    .att-times {
+      font-size: 17px;
+      font-weight: 700;
+      color: #1b5e20;
+      letter-spacing: 0.5px;
     }
-    .attendance-row:last-child { border-bottom: none; }
-    .attendance-clocks {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-end;
-      gap: 2px;
-      min-width: 80px;
+    .att-times .arrow { color: #aaa; margin: 0 4px; font-weight: 400; }
+    .att-times .pending { color: #bbb; }
+    .att-status-text {
+      font-size: 14px;
+      font-weight: 600;
     }
-    .no-att-section {
-      margin-top: 8px;
-      padding: 10px 14px;
-      background: #fff8e1;
-      border-radius: 8px;
+    .att-status-text.pending { color: #f57c00; }
+    .att-status-text.absent  { color: #757575; text-decoration: line-through; }
+    .att-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 999px;
+      letter-spacing: 0.5px;
+    }
+    .att-badge--done    { background: #2e7d32; color: #fff; }
+    .att-badge--working { background: #1565c0; color: #fff; }
+    .att-badge--pending { background: #f57c00; color: #fff; }
+    .att-badge--absent  { background: #757575; color: #fff; }
+
+    /* ===== アクション ===== */
+    .att-actions { display: flex; gap: 6px; }
+    .att-btn {
+      font-size: 12px;
+      padding: 5px 10px;
+      border-radius: 5px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      background: #fff;
+      transition: all 0.12s;
+      white-space: nowrap;
+    }
+    .att-btn--ghost   { color: #777;    border-color: #ddd; }
+    .att-btn--ghost:hover   { color: #c62828; border-color: #c62828; background: #ffebee; }
+    .att-btn--primary { color: #fff;    background: #1565c0; border-color: #1565c0; }
+    .att-btn--primary:hover { background: #0d47a1; }
+    .att-btn--warn    { color: #d84315; border-color: #ffab91; background: #fff3e0; font-weight: 600; }
+    .att-btn--warn:hover    { background: #d84315; color: #fff; border-color: #d84315; }
+
+    /* ===== セクション ===== */
+    .att-section-title {
       font-size: 13px;
-      color: #795548;
+      font-weight: 700;
+      color: #555;
+      margin: 18px 0 8px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #eee;
     }
-    .no-att-section strong { display: block; margin-bottom: 6px; color: #5d4037; }
-    .no-att-item { padding: 2px 0; }
+    .att-section-title .count {
+      font-weight: 400;
+      color: #888;
+      margin-left: 6px;
+    }
+
+    /* レスポンシブ */
+    @media (max-width: 720px) {
+      .att-row {
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+      .att-status, .att-actions { justify-content: flex-start; }
+    }
   </style>
 </head>
 <body>
@@ -80,7 +154,7 @@
       </header>
 
       <div class="main-content">
-        <p class="page-lead">通所予定者の出勤・欠勤を記録します。欠勤を記録すると、希望していた他の利用者に空き枠通知が自動送信されます。</p>
+        <p class="page-lead">利用者の打刻状況の確認と、欠勤連絡の記録を行います。欠勤を記録すると、希望していた他の利用者に空き枠通知が自動送信されます。</p>
 
         <div class="stat-grid">
           <div class="stat success">
@@ -104,17 +178,25 @@
         <div class="card">
           <h2 class="card-title">
             <span id="dateLabel">—</span>
-            <span class="card-action text-muted text-sm">タップで出欠を切り替え</span>
           </h2>
 
-          <div id="attendanceList"></div>
           <p class="text-xs text-muted mt-3" id="emptyMsg" style="display: none;">この日付の通所予定者はいません。</p>
 
-          <!-- 未打刻者セクション -->
-          <div class="no-att-section" id="noClockSection" style="display:none;">
-            <strong>未打刻（打刻なし）</strong>
-            <div id="noClockList"></div>
-          </div>
+          <h3 class="att-section-title" id="presentSectionTitle" style="display:none;">
+            打刻済み <span class="count" id="presentSectionCount"></span>
+          </h3>
+          <div id="presentList"></div>
+
+          <h3 class="att-section-title" id="pendingSectionTitle" style="display:none;">
+            ⚠️ 未打刻 <span class="count" id="pendingSectionCount"></span>
+            <span style="font-weight:400;color:#999;margin-left:8px;font-size:11px;">— 欠勤連絡を受けたら「欠勤に変更」、ご本人と連絡が取れたら「代行打刻」</span>
+          </h3>
+          <div id="pendingList"></div>
+
+          <h3 class="att-section-title" id="absentSectionTitle" style="display:none;">
+            欠勤 <span class="count" id="absentSectionCount"></span>
+          </h3>
+          <div id="absentList"></div>
         </div>
 
         <div class="card">
@@ -240,103 +322,166 @@
     }
 
     // ========== 描画 ==========
+    // u.state: 'present' (clock_in or 出勤) / 'absent' (欠勤) / null (予定のみ)
+    // 表示カテゴリ:
+    //   - done:    出勤完了（clock_in + clock_out）
+    //   - working: 勤務中（clock_in のみ）
+    //   - present-no-clock: 管理者が出勤記録（打刻なし、代行）
+    //   - pending: 未打刻 / 未記録
+    //   - absent:  欠勤
+    function categorize(u) {
+      if (u.state === 'absent') return 'absent';
+      if (u.state === 'present') {
+        if (u.clock_in && u.clock_out) return 'done';
+        if (u.clock_in)                return 'working';
+        return 'present-no-clock';
+      }
+      return 'pending';
+    }
+
+    function rowHtml(u) {
+      const cat = categorize(u);
+      const ci  = fmtClock(u.clock_in);
+      const co  = fmtClock(u.clock_out);
+      const meta = '#' + u.user_id + ' / ' + u.category + (u.is_external ? ' / 施設外' : '');
+
+      let statusHtml, actionsHtml, rowMod;
+      if (cat === 'done') {
+        rowMod = 'present';
+        statusHtml =
+          '<span class="att-times">' + ci + '<span class="arrow">→</span>' + co + '</span>'
+          + '<span class="att-badge att-badge--done">完了</span>';
+        actionsHtml = '<button class="att-btn att-btn--ghost" data-action="absent">欠勤に変更</button>';
+      } else if (cat === 'working') {
+        rowMod = 'working';
+        statusHtml =
+          '<span class="att-times">出勤 ' + ci + '<span class="arrow">→</span><span class="pending">退勤未</span></span>'
+          + '<span class="att-badge att-badge--working">勤務中</span>';
+        actionsHtml = '<button class="att-btn att-btn--ghost" data-action="absent">欠勤に変更</button>';
+      } else if (cat === 'present-no-clock') {
+        rowMod = 'present';
+        statusHtml =
+          '<span class="att-status-text" style="color:#2e7d32;">出勤（打刻なし）</span>'
+          + '<span class="att-badge att-badge--done">出勤</span>';
+        actionsHtml = '<button class="att-btn att-btn--ghost" data-action="absent">欠勤に変更</button>';
+      } else if (cat === 'absent') {
+        rowMod = 'absent';
+        statusHtml =
+          '<span class="att-status-text absent">欠勤</span>'
+          + '<span class="att-badge att-badge--absent">欠勤</span>';
+        actionsHtml = '<button class="att-btn att-btn--ghost" data-action="undo">取消</button>';
+      } else {
+        rowMod = 'pending';
+        statusHtml =
+          '<span class="att-status-text pending">未打刻</span>'
+          + '<span class="att-badge att-badge--pending">未打刻</span>';
+        actionsHtml =
+          '<button class="att-btn att-btn--warn"    data-action="absent">欠勤に変更</button>'
+          + '<button class="att-btn att-btn--primary" data-action="proxyClockIn">代行打刻</button>';
+      }
+
+      return [
+        '<div class="att-row att-row--' + rowMod + '" data-uid="' + u.user_id + '">',
+        '  <div class="att-name">' + u.name + '<span class="att-meta">' + meta + '</span></div>',
+        '  <div class="att-status">' + statusHtml + '</div>',
+        '  <div class="att-actions">' + actionsHtml + '</div>',
+        '</div>',
+      ].join('');
+    }
+
     function render() {
       document.getElementById('dateInput').value = target;
 
       const [y, m, d] = target.split('-').map(Number);
       const dowName = ['日', '月', '火', '水', '木', '金', '土'][new Date(y, m - 1, d).getDay()];
       document.getElementById('dateLabel').textContent =
-        '通所予定者一覧（' + y + '年' + m + '月' + d + '日 ' + dowName + '曜）';
+        y + '年' + m + '月' + d + '日（' + dowName + '）の通所予定';
 
-      const total       = todayUsers.length;
-      const present     = todayUsers.filter(u => u.state === 'present').length;
-      const absent      = todayUsers.filter(u => u.state === 'absent').length;
-      const unrecorded  = todayUsers.filter(u => u.state === null).length;
+      const groups = { present: [], pending: [], absent: [] };
+      todayUsers.forEach(u => {
+        const cat = categorize(u);
+        if (cat === 'absent')  groups.absent.push(u);
+        else if (cat === 'pending') groups.pending.push(u);
+        else                        groups.present.push(u); // done / working / present-no-clock
+      });
 
-      document.getElementById('presentCount').innerHTML    = present    + '<span class="unit">名</span>';
-      document.getElementById('absentCount').innerHTML     = absent     + '<span class="unit">名</span>';
-      document.getElementById('unrecordedCount').innerHTML = unrecorded + '<span class="unit">名</span>';
-      document.getElementById('totalCount').innerHTML      = total      + '<span class="unit">名</span>';
+      const total = todayUsers.length;
+      document.getElementById('presentCount').innerHTML    = groups.present.length + '<span class="unit">名</span>';
+      document.getElementById('absentCount').innerHTML     = groups.absent.length  + '<span class="unit">名</span>';
+      document.getElementById('unrecordedCount').innerHTML = groups.pending.length + '<span class="unit">名</span>';
+      document.getElementById('totalCount').innerHTML      = total                 + '<span class="unit">名</span>';
 
-      const list     = document.getElementById('attendanceList');
       const emptyMsg = document.getElementById('emptyMsg');
-
       if (total === 0) {
-        list.innerHTML = '';
         emptyMsg.style.display = '';
-        document.getElementById('noClockSection').style.display = 'none';
+        ['present', 'pending', 'absent'].forEach(k => {
+          document.getElementById(k + 'List').innerHTML = '';
+          document.getElementById(k + 'SectionTitle').style.display = 'none';
+        });
         return;
       }
       emptyMsg.style.display = 'none';
 
-      list.innerHTML = todayUsers.map((u, i) => {
-        const ci = fmtClock(u.clock_in);
-        const co = fmtClock(u.clock_out);
-        const clockHtml = (u.state === 'present' || u.clock_in)
-          ? [
-              '<div class="attendance-clocks">',
-              '  <span class="clock-time' + (ci ? '' : ' missing') + '">出: ' + (ci || '—') + '</span>',
-              '  <span class="clock-time' + (co ? '' : ' missing') + '">退: ' + (co || '—') + '</span>',
-              '</div>',
-            ].join('')
-          : '<div class="attendance-clocks"></div>';
-
-        return [
-          '<div class="attendance-row">',
-          '  <div class="attendance-name">',
-          '    ' + u.name,
-          '    <span class="meta">#' + u.user_id + ' / ' + u.category + (u.is_external ? ' / 施設外' : '') + '</span>',
-          '  </div>',
-          clockHtml,
-          '  <div class="attendance-toggle" data-idx="' + i + '">',
-          '    <button class="present' + (u.state === 'present' ? ' active' : '') + '" data-state="present">出勤</button>',
-          '    <button class="absent'  + (u.state === 'absent'  ? ' active' : '') + '" data-state="absent">欠勤</button>',
-          '  </div>',
-          '</div>',
-        ].join('');
-      }).join('');
-
-      list.querySelectorAll('.attendance-toggle').forEach(toggle => {
-        toggle.querySelectorAll('button').forEach(btn => {
-          btn.addEventListener('click', () => {
-            const idx = +toggle.dataset.idx;
-            const newState = btn.dataset.state;
-            saveAttendance(idx, newState);
-          });
-        });
+      // 各セクション描画
+      ['present', 'pending', 'absent'].forEach(k => {
+        const list = groups[k];
+        const titleEl = document.getElementById(k + 'SectionTitle');
+        const countEl = document.getElementById(k + 'SectionCount');
+        const listEl  = document.getElementById(k + 'List');
+        if (list.length === 0) {
+          titleEl.style.display = 'none';
+          listEl.innerHTML = '';
+        } else {
+          titleEl.style.display = '';
+          countEl.textContent = list.length + '名';
+          listEl.innerHTML = list.map(rowHtml).join('');
+        }
       });
 
-      // 未打刻者セクション（出勤記録があるが clock_in なし）
-      const noClock = todayUsers.filter(u => u.state === 'present' && !u.clock_in);
-      const noClockSec  = document.getElementById('noClockSection');
-      const noClockList = document.getElementById('noClockList');
-      if (noClock.length > 0) {
-        noClockList.innerHTML = noClock.map(u =>
-          '<div class="no-att-item">・' + u.name + '（' + u.category + '）</div>'
-        ).join('');
-        noClockSec.style.display = '';
-      } else {
-        noClockSec.style.display = 'none';
-      }
+      // ボタンbind
+      document.querySelectorAll('.att-row .att-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const row    = btn.closest('.att-row');
+          const uid    = Number(row.dataset.uid);
+          const action = btn.dataset.action;
+          handleAction(uid, action, btn);
+        });
+      });
     }
 
-    // ========== 出欠記録の保存 ==========
-    async function saveAttendance(idx, newState) {
-      const u = todayUsers[idx];
+    // ========== アクション ==========
+    async function handleAction(uid, action, btn) {
+      const u = todayUsers.find(x => x.user_id === uid);
       if (!u) return;
-      const oldState = u.state;
-      u.state = newState; // 楽観的更新
-      render();
+      const restore = ShiftAdminAPI.busyButton(btn, '処理中…');
+
       try {
-        await ShiftAdminAPI.recordAttendance([{
-          user_id: u.user_id,
-          date:    target,
-          status:  statusToGas(newState),
-        }]);
+        if (action === 'absent') {
+          await ShiftAdminAPI.recordAttendance([{
+            user_id: uid, date: target, status: '欠勤',
+          }]);
+          u.state = 'absent';
+          // 欠勤に変更されたら打刻時間はクリア表示扱い（DBには残るが見せない方が混乱しない）
+          u.clock_in = ''; u.clock_out = '';
+        } else if (action === 'proxyClockIn') {
+          await ShiftAdminAPI.recordAttendance([{
+            user_id: uid, date: target, status: '出勤',
+          }]);
+          u.state = 'present';
+          // 代行記録：clock_in は空のまま
+        } else if (action === 'undo') {
+          if (!confirm(u.name + 'さんの欠勤記録を取り消します。よろしいですか？')) {
+            restore();
+            return;
+          }
+          await ShiftAdminAPI.deleteAttendance(uid, target);
+          u.state = null;
+          u.clock_in = ''; u.clock_out = '';
+        }
+        render(); // 再描画でハンドラも貼り直し
       } catch (err) {
-        u.state = oldState;
-        render();
-        alert('保存に失敗しました: ' + (err.message || 'エラー'));
+        restore();
+        alert('処理に失敗しました: ' + (err.message || 'エラー'));
       }
     }
 

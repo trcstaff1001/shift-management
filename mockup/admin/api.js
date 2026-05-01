@@ -173,13 +173,22 @@
             if (seed < 6)       status = '不承認';
             else if (seed < 9)  status = '提出済';
             else                status = '承認';
-            const shift_type = ['在宅', '在宅(関東)', '在宅通所'].includes(u.category) ? '在宅' : '通所';
+            let shift_type, preferred_time = '';
+            if (u.category === '在宅通所' && d === Math.ceil(days / 3)) {
+              shift_type = '月一通所';
+              preferred_time = '午前';
+            } else if (['在宅', '在宅(関東)', '在宅通所'].includes(u.category)) {
+              shift_type = '在宅';
+            } else {
+              shift_type = '通所';
+            }
             rows.push({
               request_id: rows.length + 1,
               user_id:    u.user_id,
               date:       ry + '-' + String(rm).padStart(2, '0') + '-' + String(d).padStart(2, '0'),
               status,
               shift_type,
+              preferred_time,
             });
           }
         });

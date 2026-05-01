@@ -8,21 +8,18 @@
   <script src="../../config.js"></script>
   <script src="api.js"></script>
   <style>
-    /* 在宅シフトタイプ表示 */
-    .adjust-cell[data-stype="在宅"]:not(.empty):not(.closed)::before {
-      content: '宅';
-      position: absolute;
-      top: 1px;
-      right: 2px;
-      font-size: 7px;
-      font-weight: 700;
-      line-height: 1;
-      color: rgba(255, 255, 255, 0.85);
-      pointer-events: none;
-    }
-    .adjust-cell.requested[data-stype="在宅"]::before { color: #1e3a5f; }
+    /* ===== シフトタイプ別ラベル（style.css の ::before を詳細度で上書き） ===== */
+    .adjust-cell[data-stype="通所"]::before { content: "通"; }
 
-    /* 元の希望インジケーター */
+    .adjust-cell[data-stype="在宅"]::before { content: "在"; }
+    .adjust-cell.requested[data-stype="在宅"] { background: #ede9fe; color: #5b21b6; }
+    .adjust-cell.approved[data-stype="在宅"]  { background: #a7f3d0; color: #065f46; }
+
+    .adjust-cell[data-stype="月一通所"]::before { content: "月"; }
+    .adjust-cell.requested[data-stype="月一通所"] { background: #fef3c7; color: #92400e; }
+    .adjust-cell.approved[data-stype="月一通所"]  { background: #ffedd5; color: #c2410c; }
+
+    /* ===== 元の希望インジケーター (::after) ===== */
     .adjust-cell { position: relative; }
     .adjust-cell.orig-requested:not(.requested)::after {
       content: '';
@@ -105,13 +102,19 @@
 
         <!-- 凡例 -->
         <div class="card" style="padding: 16px;">
-          <div class="form-row" style="font-size: 14px;">
-            <span><span class="pill">希</span> 希望（未承認）</span>
+          <div style="font-size: 13px; display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center;">
+            <span style="font-weight:600; color: var(--text-soft);">タイプ</span>
+            <span><span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:4px;font-size:11px;font-weight:700;background:var(--primary-bg);color:var(--primary-dark);">通</span> 通所</span>
+            <span><span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:4px;font-size:11px;font-weight:700;background:#ede9fe;color:#5b21b6;">在</span> 在宅</span>
+            <span><span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:4px;font-size:11px;font-weight:700;background:#fef3c7;color:#92400e;">月</span> 月一通所（ホバーで希望時間）</span>
+          </div>
+          <div style="font-size: 13px; display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; margin-top: 8px;">
+            <span style="font-weight:600; color: var(--text-soft);">状態</span>
             <span><span class="pill success">✓</span> 承認</span>
+            <span><span class="pill">希</span> 希望（未承認）</span>
             <span><span class="pill muted">✗</span> 不承認</span>
             <span><span class="pill warn">外</span> 施設外</span>
-            <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#6b7280;vertical-align:middle;margin-right:4px;"></span>元の希望あり</span>
-            <span><span class="pill" style="position:relative;font-size:10px;"><span style="position:absolute;top:1px;right:2px;font-size:7px;font-weight:700;">宅</span>&nbsp;&nbsp;</span> 在宅希望</span>
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#6b7280;vertical-align:middle;margin-right:4px;"></span>元の希望あり</span>
             <span class="text-muted">— セルをクリックで状態切替</span>
           </div>
         </div>
@@ -177,7 +180,8 @@
     let tableUsers  = [];           // API から取得した利用者一覧
     let cellStates  = new Map();    // 'uid_day' → state
     let origStates  = new Map();    // 'uid_day' → true（初回ロード時に '提出済' だった日）
-    let shiftTypes  = new Map();    // 'uid_day' → '在宅' | '通所'
+    let shiftTypes     = new Map();  // 'uid_day' → '在宅' | '通所' | '月一通所'
+    let preferredTimes = new Map();  // 'uid_day' → '午前' | '午後' | '一日'（月一通所のみ）
 
     function getMonthFromHash() {
       const m = location.hash.match(/month=(\d{4})-(\d{2})/);
@@ -215,9 +219,10 @@
         tableUsers = users;
 
         // ShiftRequests → cellStates
-        cellStates = new Map();
-        origStates = new Map();
-        shiftTypes = new Map();
+        cellStates     = new Map();
+        origStates     = new Map();
+        shiftTypes     = new Map();
+        preferredTimes = new Map();
         requests.forEach(r => {
           const day = Number(String(r.date).split('-')[2]);
           if (!day) return;
@@ -230,6 +235,7 @@
           cellStates.set(key, state);
           if (state === 'requested') origStates.set(key, true);
           if (r.shift_type) shiftTypes.set(key, r.shift_type);
+          if (r.shift_type === '月一通所' && r.preferred_time) preferredTimes.set(key, r.preferred_time);
         });
 
         buildTable();
@@ -282,10 +288,16 @@
           if (state === 'approved' || state === 'external') approvedDays++;
           const isOrig    = origStates.has(key);
           const origClass = isOrig ? ' orig-requested' : '';
-          const origTitle = isOrig && state !== 'requested' ? ' title="元の希望日"' : '';
           const stype     = shiftTypes.get(key) || '';
           const stypeAttr = stype ? ' data-stype="' + stype + '"' : '';
-          cells.push('<td><div class="adjust-cell ' + state + origClass + '"' + origTitle + stypeAttr + ' data-uid="' + u.user_id + '" data-day="' + d + '"></div></td>');
+          const ptime     = preferredTimes.get(key);
+          let titleAttr   = '';
+          if (stype === '月一通所') {
+            titleAttr = ' title="月一通所 / ' + (ptime || '未設定') + '"';
+          } else if (isOrig && state !== 'requested') {
+            titleAttr = ' title="元の希望日"';
+          }
+          cells.push('<td><div class="adjust-cell ' + state + origClass + '"' + stypeAttr + titleAttr + ' data-uid="' + u.user_id + '" data-day="' + d + '"></div></td>');
         }
         cells.push('<td class="total-col" id="total-' + u.user_id + '">' + approvedDays + '</td>');
         tr.innerHTML = cells.join('');

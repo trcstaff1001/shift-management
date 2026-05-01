@@ -68,6 +68,13 @@
       color: #2e7d32;
       margin: 0;
     }
+    .today-finished {
+      text-align: center;
+      padding: 8px 0;
+    }
+    .today-finished-emoji { font-size: 32px; line-height: 1; margin-bottom: 6px; }
+    .today-finished-msg   { font-size: 16px; font-weight: 700; color: #2e7d32; margin: 0 0 4px; }
+    .today-finished-sub   { font-size: 13px; color: #666; margin: 0; }
     .btn-clock {
       display: block;
       width: 100%;
@@ -239,8 +246,11 @@
         ].join('');
       } else {
         body = [
-          '<p class="today-clocked">出勤: ' + ci + '　退勤: ' + co + '</p>',
-          '<p class="today-done">打刻が完了しました ✓</p>',
+          '<div class="today-finished">',
+          '  <div class="today-finished-emoji">🌸</div>',
+          '  <p class="today-finished-msg">お疲れ様でした！</p>',
+          '  <p class="today-finished-sub">出勤 ' + ci + ' ／ 退勤 ' + co + '</p>',
+          '</div>',
         ].join('');
       }
 

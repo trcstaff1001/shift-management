@@ -360,10 +360,14 @@
         actEl.innerHTML = '<button class="btn-clock btn-clock-out" id="clockOutBtn">退勤する</button>';
         document.getElementById('clockOutBtn').addEventListener('click', doClockOut);
       } else {
-        recEl.textContent = '出勤: ' + ci + '　退勤: ' + co;
-        recEl.style.display = '';
-        doneEl.style.display = '';
-        actEl.innerHTML = '';
+        recEl.style.display = 'none';
+        doneEl.style.display = 'none';
+        actEl.innerHTML =
+          '<div style="text-align:center;padding:8px 0;">'
+          + '<div style="font-size:32px;line-height:1;margin-bottom:6px;">🌸</div>'
+          + '<p style="font-size:16px;font-weight:700;color:#2e7d32;margin:0 0 4px;">お疲れ様でした！</p>'
+          + '<p style="font-size:13px;color:#666;margin:0;">出勤 ' + ci + ' ／ 退勤 ' + co + '</p>'
+          + '</div>';
       }
     }
 

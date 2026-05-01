@@ -261,14 +261,17 @@
       return callPost('shiftRequests.applyVacancy', { user_id: s.user_id, date });
     },
 
-    // 打刻
+    // 打刻 — レスポンスが { clock_in, attendance } 形式の入れ子なので
+    // attendance を取り出してフロントに返す（attendance には clock_in/out 両方が入る）
     async clockIn(date) {
-      const s = requireSession();
-      return callPost('attendances.clockIn', { user_id: s.user_id, date });
+      const s   = requireSession();
+      const res = await callPost('attendances.clockIn', { user_id: s.user_id, date });
+      return res && res.attendance ? res.attendance : res;
     },
     async clockOut(date) {
-      const s = requireSession();
-      return callPost('attendances.clockOut', { user_id: s.user_id, date });
+      const s   = requireSession();
+      const res = await callPost('attendances.clockOut', { user_id: s.user_id, date });
+      return res && res.attendance ? res.attendance : res;
     },
     async getTodayAttendance(date) {
       const s = requireSession();

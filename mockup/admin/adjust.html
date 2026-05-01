@@ -7,6 +7,27 @@
   <link rel="stylesheet" href="style.css" />
   <script src="../../config.js"></script>
   <script src="api.js"></script>
+  <style>
+    /* 元の希望インジケーター */
+    .adjust-cell { position: relative; }
+    .adjust-cell.orig-requested:not(.requested)::after {
+      content: '';
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.75);
+      pointer-events: none;
+    }
+    .adjust-cell.empty.orig-requested {
+      outline: 1px dashed #9ca3af;
+    }
+    .adjust-cell.empty.orig-requested::after {
+      background: #9ca3af;
+    }
+  </style>
 </head>
 <body>
   <div class="app">
@@ -75,6 +96,7 @@
             <span><span class="pill success">✓</span> 承認</span>
             <span><span class="pill muted">✗</span> 不承認</span>
             <span><span class="pill warn">外</span> 施設外</span>
+            <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#6b7280;vertical-align:middle;margin-right:4px;"></span>元の希望あり</span>
             <span class="text-muted">— セルをクリックで状態切替</span>
           </div>
         </div>
@@ -139,6 +161,7 @@
     let target      = getMonthFromHash();
     let tableUsers  = [];           // API から取得した利用者一覧
     let cellStates  = new Map();    // 'uid_day' → state
+    let origStates  = new Map();    // 'uid_day' → true（初回ロード時に '提出済' だった日）
 
     function getMonthFromHash() {
       const m = location.hash.match(/month=(\d{4})-(\d{2})/);
@@ -177,6 +200,7 @@
 
         // ShiftRequests → cellStates
         cellStates = new Map();
+        origStates = new Map();
         requests.forEach(r => {
           const day = Number(String(r.date).split('-')[2]);
           if (!day) return;
@@ -185,7 +209,9 @@
           else if (r.status === '承認')    state = 'approved';
           else if (r.status === '不承認')  state = 'rejected';
           else return;
-          cellStates.set(r.user_id + '_' + day, state);
+          const key = r.user_id + '_' + day;
+          cellStates.set(key, state);
+          if (state === 'requested') origStates.set(key, true);
         });
 
         buildTable();
@@ -233,9 +259,13 @@
         const cells = ['<td class="user-col">' + u.name + '<br><span class="text-xs text-muted">#' + u.user_id + ' ' + u.category + '</span></td>'];
         let approvedDays = 0;
         for (let d = 1; d <= days; d++) {
-          const state = closed.has(d) ? 'closed' : (cellStates.get(u.user_id + '_' + d) || 'empty');
+          const key   = u.user_id + '_' + d;
+          const state = closed.has(d) ? 'closed' : (cellStates.get(key) || 'empty');
           if (state === 'approved' || state === 'external') approvedDays++;
-          cells.push('<td><div class="adjust-cell ' + state + '" data-uid="' + u.user_id + '" data-day="' + d + '"></div></td>');
+          const isOrig    = origStates.has(key);
+          const origClass = isOrig ? ' orig-requested' : '';
+          const origTitle = isOrig && state !== 'requested' ? ' title="元の希望日"' : '';
+          cells.push('<td><div class="adjust-cell ' + state + origClass + '"' + origTitle + ' data-uid="' + u.user_id + '" data-day="' + d + '"></div></td>');
         }
         cells.push('<td class="total-col" id="total-' + u.user_id + '">' + approvedDays + '</td>');
         tr.innerHTML = cells.join('');

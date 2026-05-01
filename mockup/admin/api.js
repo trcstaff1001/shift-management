@@ -183,6 +183,10 @@
         });
         return Promise.resolve(rows);
       }
+      case 'shiftConfirmed.list':
+        return Promise.resolve([]);
+      case 'attendances.list':
+        return Promise.resolve([]);
       case 'shiftConfirmed.create': {
         const records = (args && args.records) || [];
         return Promise.resolve({ created: records.length, skipped: 0, notifications_sent: records.length });
@@ -220,7 +224,11 @@
     listShiftRequests: (params) => callGet('shiftRequests.list', params || {}),
 
     // シフト確定
-    confirmShifts:     (payload)      => callPost('shiftConfirmed.create', payload),
+    confirmShifts:        (payload) => callPost('shiftConfirmed.create', payload),
+    listShiftConfirmed:   (params)  => callGet('shiftConfirmed.list', params || {}),
+
+    // 出退勤
+    listAttendances:      (params)  => callGet('attendances.list', params || {}),
 
     // エクスポート
     exportSpreadsheet: (year_month)   => callPost('exports.spreadsheet', { year_month }),

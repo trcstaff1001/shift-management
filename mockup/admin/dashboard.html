@@ -29,7 +29,7 @@
           <li><a href="login.html">ログアウト</a></li>
         </ul>
       </nav>
-      <div class="sidebar-foot">ver 0.3<br>管理者: 山田 花子</div>
+      <div class="sidebar-foot">ver 0.3</div>
     </aside>
 
     <div class="main">
@@ -45,25 +45,25 @@
 
         <!-- KPI -->
         <div class="stat-grid">
-          <div class="stat">
+          <div class="stat" id="kpiTodayStat">
             <p class="stat-label">本日の通所予定</p>
-            <p class="stat-value">23<span class="unit">/ 30名</span></p>
-            <p class="stat-meta">うち施設外: 2名</p>
+            <p class="stat-value" id="kpiTodayCount">—<span class="unit">/ 30名</span></p>
+            <p class="stat-meta" id="kpiTodayMeta">読み込み中…</p>
           </div>
-          <div class="stat warn">
+          <div class="stat" id="kpiMonthlyStat">
             <p class="stat-label">今月の延べ利用人日</p>
-            <p class="stat-value">412<span class="unit">/ 450 (91.6%)</span></p>
-            <p class="stat-meta">5月の見込み: 110% 超の警告水準</p>
+            <p class="stat-value" id="kpiMonthlyVal">—<span class="unit" id="kpiMonthlyMax"></span></p>
+            <p class="stat-meta" id="kpiMonthlyMeta">読み込み中…</p>
           </div>
           <div class="stat">
             <p class="stat-label">利用中人数</p>
             <p class="stat-value" id="kpiActiveUsers">—<span class="unit">名</span></p>
             <p class="stat-meta" id="kpiSubmitStatus">希望提出: 読み込み中…</p>
           </div>
-          <div class="stat">
-            <p class="stat-label">未読通知（管理者宛）</p>
-            <p class="stat-value">3<span class="unit">件</span></p>
-            <p class="stat-meta">直近の欠勤連絡など</p>
+          <div class="stat" id="kpiNotifStat">
+            <p class="stat-label">未送信通知</p>
+            <p class="stat-value" id="kpiNotifCount">—<span class="unit">件</span></p>
+            <p class="stat-meta" id="kpiNotifMeta">読み込み中…</p>
           </div>
         </div>
 
@@ -92,26 +92,26 @@
             単月利用率が <strong>125%</strong> を超えると減算対象。
             当月見込みは <strong style="color: var(--warning);">118.7%</strong>（要注意水準）。
           </p>
-          <div class="trend">
-            <div class="trend-month">
-              <p class="trend-label">3月（実績）</p>
-              <p class="trend-value">112%</p>
-              <p class="trend-meta">延べ 504 / 450 人日</p>
+          <div class="trend" id="monthlyTrend">
+            <div class="trend-month" id="trend-0">
+              <p class="trend-label">—</p>
+              <p class="trend-value">—%</p>
+              <p class="trend-meta">読み込み中…</p>
             </div>
-            <div class="trend-month">
-              <p class="trend-label">4月（実績）</p>
-              <p class="trend-value warn">122%</p>
-              <p class="trend-meta">延べ 549 / 450 人日</p>
+            <div class="trend-month" id="trend-1">
+              <p class="trend-label">—</p>
+              <p class="trend-value">—%</p>
+              <p class="trend-meta">読み込み中…</p>
             </div>
-            <div class="trend-month current">
-              <p class="trend-label">5月（見込み）</p>
-              <p class="trend-value warn">118%</p>
-              <p class="trend-meta">確定 412 + 希望 120 / 450</p>
+            <div class="trend-month current" id="trend-2">
+              <p class="trend-label">—</p>
+              <p class="trend-value">—%</p>
+              <p class="trend-meta">読み込み中…</p>
             </div>
           </div>
-          <div class="alert warn mt-4">
+          <div class="alert warn mt-4" id="monthlyAlert" style="display:none;">
             <strong>⚠ 警告:</strong>
-            <span>5月の単月超過が続くと125%に到達する可能性があります。シフト調整画面で承認数の見直しを推奨。</span>
+            <span id="monthlyAlertMsg"></span>
           </div>
         </div>
 
@@ -124,17 +124,17 @@
           <p class="text-sm text-muted mb-3" id="todayAttLabel">—</p>
           <div class="stat-grid" style="margin-bottom: 0;">
             <div class="stat success">
-              <p class="stat-label">出勤</p>
-              <p class="stat-value">18<span class="unit">名</span></p>
-            </div>
-            <div class="stat danger">
-              <p class="stat-label">欠勤</p>
-              <p class="stat-value">2<span class="unit">名</span></p>
+              <p class="stat-label">出勤（打刻あり）</p>
+              <p class="stat-value" id="kpiClockIn">—<span class="unit">名</span></p>
             </div>
             <div class="stat">
+              <p class="stat-label">退勤済</p>
+              <p class="stat-value" id="kpiClockOut">—<span class="unit">名</span></p>
+            </div>
+            <div class="stat warn">
               <p class="stat-label">未記録</p>
-              <p class="stat-value">3<span class="unit">名</span></p>
-              <p class="stat-meta">記録漏れに注意</p>
+              <p class="stat-value" id="kpiUnrecorded">—<span class="unit">名</span></p>
+              <p class="stat-meta">確定済みで打刻なし</p>
             </div>
           </div>
         </div>
@@ -148,17 +148,11 @@
                 <tr><th>項目</th><th>対象</th><th>期限</th><th>アクション</th></tr>
               </thead>
               <tbody id="todoTable">
-                <tr>
+                <tr id="todoAdjust">
                   <td><span class="pill">未確定</span></td>
-                  <td>5月の希望調整</td>
-                  <td>2026/4/30</td>
+                  <td id="todoAdjustLabel">希望調整</td>
+                  <td id="todoAdjustDeadline">—</td>
                   <td><a href="adjust.html" class="btn btn-sm">調整画面へ</a></td>
-                </tr>
-                <tr>
-                  <td><span class="pill muted">通常</span></td>
-                  <td>本日の出欠未記録: 3名</td>
-                  <td>本日中</td>
-                  <td><a href="attendance.html" class="btn btn-secondary btn-sm">出欠記録</a></td>
                 </tr>
               </tbody>
             </table>
@@ -169,15 +163,34 @@
   </div>
 
   <script>
-    // ===== 日付表示 =====
-    const now    = new Date();
-    const DOW    = ['日', '月', '火', '水', '木', '金', '土'];
-    const today  = now.getFullYear() + '年' + (now.getMonth() + 1) + '月' + now.getDate() + '日（' + DOW[now.getDay()] + '）';
-    document.getElementById('todayLabel').textContent    = today;
-    document.getElementById('todayAttLabel').textContent = today + 'の通所予定者の状況';
+    // ===== 定数 =====
+    const DAILY_MAX    = 30;
+    const CAPACITY     = 20;
+    const MONTHLY_HARD = 1.25;
 
-    // ===== KPI: 利用者数・提出状況 =====
-    const CURRENT_MONTH = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    // ===== 日付 =====
+    const now  = new Date();
+    const DOW  = ['日', '月', '火', '水', '木', '金', '土'];
+    const todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+    const CURRENT_MONTH = todayStr.slice(0, 7);
+    const curM = now.getMonth() + 1;
+
+    document.getElementById('todayLabel').textContent =
+      now.getFullYear() + '年' + curM + '月' + now.getDate() + '日（' + DOW[now.getDay()] + '）';
+    document.getElementById('todayAttLabel').textContent =
+      curM + '月' + now.getDate() + '日（' + DOW[now.getDay()] + '）の通所予定者の状況';
+
+    // ===== ヘルパ =====
+    function calcOpenDays(year, month) {
+      const days = new Date(year, month, 0).getDate();
+      let count = 0;
+      for (let d = 1; d <= days; d++) {
+        if (new Date(year, month - 1, d).getDay() !== 0) count++;
+      }
+      return count;
+    }
+
+    // ===== KPI: 利用者数・希望提出状況 =====
     (async function loadKpi() {
       try {
         const [users, requests] = await Promise.all([
@@ -189,25 +202,117 @@
         const submittedCnt = users.filter(u => submittedIds.has(Number(u.user_id))).length;
         const notSubmitted = activeCount - submittedCnt;
 
-        document.getElementById('kpiActiveUsers').innerHTML =
-          activeCount + '<span class="unit">名</span>';
+        document.getElementById('kpiActiveUsers').innerHTML = activeCount + '<span class="unit">名</span>';
 
         const statusEl = document.getElementById('kpiSubmitStatus');
+        const label = curM + '月希望提出: ' + submittedCnt + ' / ' + activeCount;
         if (notSubmitted > 0) {
-          statusEl.innerHTML = '5月希望提出: ' + submittedCnt + ' / ' + activeCount +
-            '　<span style="color:var(--warning);font-weight:600;">未提出 ' + notSubmitted + '名</span>';
-          // 対応待ちテーブルに追記
+          statusEl.innerHTML = label + '　<span style="color:var(--warning);font-weight:600;">未提出 ' + notSubmitted + '名</span>';
           const tr = document.createElement('tr');
           tr.innerHTML = '<td><span class="pill warn">締切間近</span></td>' +
-            '<td>5月分シフト未提出: ' + notSubmitted + '名</td>' +
-            '<td>2026/4/30</td>' +
+            '<td>' + curM + '月分シフト未提出: ' + notSubmitted + '名</td>' +
+            '<td>' + now.getFullYear() + '/' + curM + '/15</td>' +
             '<td><a href="users.html" class="btn btn-secondary btn-sm">利用者を見る</a></td>';
           document.getElementById('todoTable').prepend(tr);
         } else {
-          statusEl.textContent = '5月希望提出: ' + submittedCnt + ' / ' + activeCount + '　全員提出済';
+          statusEl.textContent = label + '　全員提出済';
         }
+
+        // 対応待ち行（希望調整）を今月分に更新
+        document.getElementById('todoAdjustLabel').textContent = curM + '月の希望調整';
+        document.getElementById('todoAdjustDeadline').textContent = now.getFullYear() + '/' + curM + '/20';
+      } catch (e) { console.error(e); }
+    })();
+
+    // ===== 今日の通所予定 + 出退勤打刻 =====
+    (async function loadTodayStats() {
+      try {
+        const [confirmed, atts] = await Promise.all([
+          ShiftAdminAPI.listShiftConfirmed({ month: CURRENT_MONTH }),
+          ShiftAdminAPI.listAttendances({ month: CURRENT_MONTH }),
+        ]);
+        const todayConfirmed = confirmed.filter(r => String(r.date) === todayStr);
+        const todayAtts      = atts.filter(r => String(r.date) === todayStr);
+
+        const todayCnt   = todayConfirmed.length;
+        const clockedIn  = todayAtts.filter(a => a.clock_in).length;
+        const clockedOut = todayAtts.filter(a => a.clock_in && a.clock_out).length;
+        const unrecorded = Math.max(0, todayCnt - clockedIn);
+
+        document.getElementById('kpiTodayCount').innerHTML =
+          todayCnt + '<span class="unit">/ ' + DAILY_MAX + '名</span>';
+        document.getElementById('kpiTodayMeta').textContent =
+          todayCnt >= DAILY_MAX ? '⚠ 上限到達' : '上限まであと ' + (DAILY_MAX - todayCnt) + '名';
+        document.getElementById('kpiTodayStat').className =
+          'stat' + (todayCnt >= DAILY_MAX ? ' danger' : todayCnt >= DAILY_MAX - 3 ? ' warn' : '');
+
+        document.getElementById('kpiClockIn').innerHTML    = clockedIn  + '<span class="unit">名</span>';
+        document.getElementById('kpiClockOut').innerHTML   = clockedOut + '<span class="unit">名</span>';
+        document.getElementById('kpiUnrecorded').innerHTML = unrecorded + '<span class="unit">名</span>';
+      } catch (e) { console.error(e); }
+    })();
+
+    // ===== 今月の利用人日 + 月間利用率推移（3ヶ月）=====
+    (async function loadMonthlyTrend() {
+      try {
+        const months = [2, 1, 0].map(offset => {
+          const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+          return { year: d.getFullYear(), month: d.getMonth() + 1 };
+        });
+
+        const confirmedData = await Promise.all(
+          months.map(m => ShiftAdminAPI.listShiftConfirmed({
+            month: m.year + '-' + String(m.month).padStart(2, '0'),
+          }).catch(() => []))
+        );
+
+        months.forEach((m, i) => {
+          const open  = calcOpenDays(m.year, m.month);
+          const total = confirmedData[i].length;
+          const max   = open * CAPACITY;
+          const rate  = max === 0 ? 0 : total / max;
+          const pct   = (rate * 100).toFixed(1);
+          const isCurrent = i === 2;
+
+          const labelText = m.month + '月（' + (isCurrent ? '今月' : '実績') + '）';
+          const warnClass = rate >= MONTHLY_HARD ? 'danger' : (rate >= 1.0 ? 'warn' : '');
+          const el = document.getElementById('trend-' + i);
+          if (!el) return;
+          el.querySelector('.trend-label').textContent = labelText;
+          el.querySelector('.trend-value').textContent = pct + '%';
+          el.querySelector('.trend-value').className = 'trend-value' + (warnClass ? ' ' + warnClass : '');
+          el.querySelector('.trend-meta').textContent = '延べ ' + total + ' / ' + max + ' 人日';
+
+          if (isCurrent) {
+            document.getElementById('kpiMonthlyVal').innerHTML =
+              total + '<span class="unit" id="kpiMonthlyMax"> / ' + max + ' 人日（' + pct + '%）</span>';
+            document.getElementById('kpiMonthlyStat').className =
+              'stat' + (rate >= MONTHLY_HARD ? ' danger' : rate >= 1.0 ? ' warn' : '');
+            document.getElementById('kpiMonthlyMeta').textContent =
+              rate >= MONTHLY_HARD ? '⚠ 規定超過 125% 以上' :
+              rate >= 1.0 ? '要注意: 100% 超（125% でブロック）' : '正常範囲';
+
+            if (rate >= 1.0) {
+              document.getElementById('monthlyAlert').style.display = '';
+              document.getElementById('monthlyAlertMsg').textContent =
+                curM + '月の単月利用率が ' + pct + '% です。125% を超えると規定違反となります。シフト調整画面で承認数を見直してください。';
+            }
+          }
+        });
+      } catch (e) { console.error(e); }
+    })();
+
+    // ===== 通知（送信失敗件数）=====
+    (async function loadNotifStats() {
+      try {
+        const notifs = await ShiftAdminAPI.listNotifications({ limit: 200 });
+        const failCount = notifs.filter(n => n.mail_status === 'error' || n.cw_status === 'error').length;
+        document.getElementById('kpiNotifCount').innerHTML = failCount + '<span class="unit">件</span>';
+        document.getElementById('kpiNotifMeta').textContent = failCount > 0 ? '送信エラーを確認してください' : '送信エラーなし';
+        document.getElementById('kpiNotifStat').className = 'stat' + (failCount > 0 ? ' warn' : '');
       } catch (e) {
-        console.error(e);
+        document.getElementById('kpiNotifCount').innerHTML = '—<span class="unit">件</span>';
+        document.getElementById('kpiNotifMeta').textContent = '取得できませんでした';
       }
     })();
 
